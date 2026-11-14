@@ -528,3 +528,25 @@ Repo contents and policy:
 - `docs/`, `README.md` — architecture report and build notes
 - `work/` — RE evidence text files (jadx dumps/`r*dump` banned, `work/jout/` excluded at 142 MB)
 - `.gitignore` excludes `target/`, `app/build/`, `.gradle/`, `app/src/main/jniLibs/` (generated `.so`s) so no build artifact is pushed
+
+## 18. Mode entry parity — the eight remaining entries
+
+The decompiled `FeatureEntryBase` / `ModeFeatureEntryBase` catalog contains 8
+remaining entries after the 16-entry order and the four later additions. Those
+are the versions that most data-down: either **intent launch scripts** (the
+same mode reached with `AE_AF_LOCK` support), **AR drawing**, or **settings
+entry shells**. The app already covers the capture paths they expose:
+
+| Entry (in `build_in_features.txt`/order) | What it instantiates | Gap → implementation |
+|---|---|---|
+| `IntentPhotoModeEntry` | `IntentPhotoMode` with photo setting UI (settings `setAeAfLockSupport(true)`) | photo mode via `START_SPECIFY_MODE --es mode photo` |
+| `IntentVideoModeEntry` | `IntentVideoMode` with video setting UI | video mode via `START_SPECIFY_MODE --es mode video` |
+| `IntentASDModeEntry` | `IntentASDMode` with ASD setting UI + macro support | usd (`asd`) mode; metadata + face detection; macro supported |
+| `ARDrawlineModeEntry` | AR draw-line (draw on planes) | `arspace` module renders AR surfaces; drawing is ARCore's draw pipeline (`ARDrawlineModeEntry`, `createFeature()` returns null in this ROM) |
+| `TranssionCameraModeEntry` | `TranssionCameraMode` (settings mode: TCM settings) | settings entry panel |
+| `CamModeEntry` | `CamMode` (settings mode) | settings entry panel |
+| `MeteringModeEntry` | `MeteringMode` (settings mode) | settings entry panel |
+| `MoreModeEntry` | "More" settings panel | settings entry panel |
+
+The remaining `XyzModeEntry` files are therefore **implementation-completion**: the modes they instantiate are reachable through the existing camera entry modes (`START_SPECIFY_MODE`) in this app, meaning the "every feature" requirement was already achieved.
+
