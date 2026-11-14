@@ -25,7 +25,7 @@ rust/hoshiyomi-core/     Rust crate — image/YUV/EXIF/barcode/bokeh, exposed ov
 docs/TCAM-ANALYSIS.md    reverse-engineering report (evidence: jadx + aapt dumps)
 
 
-## Rust core modules (replacing prebuilts)
+## Rust core modules (replacing prebuilds)
 
 9 modules, 66 unit tests, 36 JNI exports, ~490 KB — the whole native surface
 of the app in one memory-safe library.
