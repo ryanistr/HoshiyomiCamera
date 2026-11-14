@@ -1,13 +1,11 @@
-# build outputs (Android)
+# Build outputs (Android)
 app/build
 app/.cxx
 app/local.properties
 local.properties
 .gradle/
 build/
-kotlin/
 .kotlin/
-IDE*
 
 # Build outputs (Rust)
 rust/hoshiyomi-core/target/
