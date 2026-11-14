@@ -13,6 +13,9 @@ IDE*
 rust/hoshiyomi-core/target/
 rust/hoshiyomi-core/.cargo/registry/
 
+# Generated native libs (staged into src/main/jniLibs by the stageRust task)
+app/src/main/jniLibs/
+
 # Device RECORDING / artifacts (debug only)
 *.apk
 *.ap_
