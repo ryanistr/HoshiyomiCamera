@@ -31,7 +31,8 @@ class VideoRecorder private constructor(
     private val height: Int,
     private val videoBitrate: Int,
     private val frameRate: Int,
-    private val withAudio: Boolean
+    private val withAudio: Boolean,
+    private val bufferInput: Boolean = false
 ) {
     companion object {
         private const val TAG = "VideoRecorder"
@@ -43,18 +44,26 @@ class VideoRecorder private constructor(
 
         const val QUALITY_1080P = "1080p"
         const val QUALITY_720P = "720p"
+        const val QUALITY_480P = "480p"
 
         fun bitRateFor(width: Int, height: Int, fps: Int): Int =
-            (width * height * fps * 0.12).toInt().coerceAtLeast(2_000_000)
+            (width * height * fps * 0.12).toInt().coerceAtLeast(1_000_000)
 
         /** Creates a recorder writing to [outputFile]; call [start] next. */
-        fun create(outputFile: File, quality: String, frameRate: Int, withAudio: Boolean): VideoRecorder {
+        fun create(
+            outputFile: File,
+            quality: String,
+            frameRate: Int,
+            withAudio: Boolean,
+            bufferInput: Boolean = false
+        ): VideoRecorder {
             val (w, h) = when (quality) {
+                QUALITY_480P -> 854 to 480
                 QUALITY_720P -> 1280 to 720
                 else -> 1920 to 1080
             }
             val bitrate = bitRateFor(w, h, frameRate)
-            return VideoRecorder(outputFile, w, h, bitrate, frameRate, withAudio)
+            return VideoRecorder(outputFile, w, h, bitrate, frameRate, withAudio, bufferInput)
         }
     }
 
@@ -76,9 +85,13 @@ class VideoRecorder private constructor(
     private val videoDrain = Thread { drainVideo() }
     private val audioThread = Thread { recordAudio() }
 
-    /** Encoder input surface — a Camera2 capture-session target. */
+    /** Encoder input surface — a Camera2 capture-session target (surface mode). */
     var inputSurface: Surface? = null
         private set
+
+    private val frameQueue = java.util.concurrent.ArrayBlockingQueue<ByteArray>(3)
+    private val frameDrain = Thread { drainBufferFrames() }
+    @Volatile private var lastBufferPtsUs: Long = 0L
 
     @SuppressLint("MissingPermission")
     fun start(listener: Listener) {
@@ -87,14 +100,21 @@ class VideoRecorder private constructor(
             val format = MediaFormat.createVideoFormat(
                 MediaFormat.MIMETYPE_VIDEO_AVC, width, height
             ).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                val color = if (bufferInput) {
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
+                } else {
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                }
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, color)
                 setInteger(MediaFormat.KEY_BIT_RATE, videoBitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL)
             }
             val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            inputSurface = codec.createInputSurface()
+            if (!bufferInput) {
+                inputSurface = codec.createInputSurface()
+            }
             codec.start()
             videoCodec = codec
 
@@ -102,6 +122,7 @@ class VideoRecorder private constructor(
 
             running.set(true)
             videoDrain.start()
+            if (bufferInput) frameDrain.start()
             if (withAudio) audioThread.start()
             listener.onStarted()
         } catch (t: Throwable) {
@@ -115,9 +136,14 @@ class VideoRecorder private constructor(
     fun stop() {
         if (!running.getAndSet(false)) return
         try {
-            videoCodec?.signalEndOfInputStream()
-            // Let the drain loop flush remaining packets before we release.
-            videoDrain.join(2_000)
+            if (!bufferInput) {
+                videoCodec?.signalEndOfInputStream()
+            } else {
+                // Wake frame drain to send EOS.
+                frameQueue.offer(ByteArray(0))
+                frameDrain.join(2_000)
+            }
+            videoDrain.join(3_000)
             if (audioThread.isAlive) {
                 audioThread.interrupt()
                 audioThread.join(1_000)
@@ -138,7 +164,7 @@ class VideoRecorder private constructor(
                 val idx = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
                 when {
                     idx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (running.get()) continue
+                        if (running.get() || bufferInput) continue
                         val now = System.nanoTime()
                         if (eosDeadlineNs.get() == 0L) {
                             eosDeadlineNs.set(now + 3_000_000_000L)
@@ -173,6 +199,56 @@ class VideoRecorder private constructor(
             Log.e(TAG, "video drain failed", t)
             listener?.onError(t)
         }
+    }
+
+    /** Buffer-input mode: queue one NV12/YUV420 frame (sized for encoder). */
+    fun queueNv12Frame(nv12: ByteArray, ptsUs: Long = System.nanoTime() / 1000) {
+        if (!bufferInput || !running.get()) return
+        lastBufferPtsUs = ptsUs
+        frameQueue.poll() // drop oldest to keep latency bounded
+        frameQueue.offer(nv12)
+    }
+
+    private fun drainBufferFrames() {
+        val codec = videoCodec ?: return
+        var sentEos = false
+        while (running.get() || !frameQueue.isEmpty() || !sentEos) {
+            val frame = try {
+                frameQueue.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) { null }
+            if (frame != null) {
+                if (frame.isEmpty()) {
+                    queueBufferInput(codec, ByteArray(0), lastBufferPtsUs, true)
+                    sentEos = true
+                    continue
+                }
+                val pts = lastBufferPtsUs.takeIf { it > 0 } ?: (System.nanoTime() / 1000)
+                queueBufferInput(codec, frame, pts, false)
+            } else if (!running.get() && !sentEos) {
+                queueBufferInput(codec, ByteArray(0), lastBufferPtsUs, true)
+                sentEos = true
+            }
+        }
+    }
+
+    private fun queueBufferInput(codec: MediaCodec, data: ByteArray, ptsUs: Long, endOfStream: Boolean): Boolean {
+        val flags = if (endOfStream) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val inIdx = try { codec.dequeueInputBuffer(TIMEOUT_US) } catch (_: Throwable) { return false }
+            if (inIdx >= 0) {
+                val ib = codec.getInputBuffer(inIdx) ?: return false
+                ib.clear()
+                if (data.isNotEmpty()) {
+                    val len = kotlin.math.min(data.size, ib.capacity())
+                    ib.put(data, 0, len)
+                    try { codec.queueInputBuffer(inIdx, 0, len, ptsUs, flags); return true } catch (_: Throwable) { return false }
+                } else {
+                    try { codec.queueInputBuffer(inIdx, 0, 0, ptsUs, flags); return true } catch (_: Throwable) { return false }
+                }
+            }
+        }
+        return false
     }
 
     private fun isSampleFlag(info: MediaCodec.BufferInfo): Boolean =

@@ -553,6 +553,10 @@ class PlatformCamera(private val context: Context) {
         // Multi-surface dual recording can exceed guaranteed stream combinations
         // on some HALs when analysis/filter surfaces are included; prefer the
         // recorder surfaces for correctness in dual mode.
+        // Multi-surface dual recording can exceed guaranteed stream combinations
+        // on some HALs when analysis/filter surfaces are included; for true dual
+        // (2+ encoder surfaces) prefer preview+recorders only. Single-recorder
+        // (normal or dual fallback) keeps analysis for filter/face callbacks.
         val targets = if (dual) {
             listOfNotNull(previewSurface) + uniqueRecorders
         } else {
