@@ -323,10 +323,9 @@ class PlatformCamera(private val context: Context) {
         val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
         previewSurface?.let { req.addTarget(it) }
         analysisReader?.surface?.let { req.addTarget(it) }
-        req.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-        req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
         recordingSurface?.let { req.addTarget(it) }
-        applyVendorPreviewParams(req)
+        req.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+        applyManualAndVendor3A(req)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
             .onFailure { Log.e(TAG, "repeating request failed", it) }
     }
@@ -351,13 +350,12 @@ class PlatformCamera(private val context: Context) {
         recordingSurface?.let { req.addTarget(it) }
         analysisReader?.surface?.let { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-        req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
         try {
             profile.applyPreview(req, info)
         } catch (t: Throwable) {
             Log.d(TAG, "profile preview apply degraded: $t")
         }
-        applyVendorPreviewParams(req)
+        applyManualAndVendor3A(req)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
     }
 
@@ -367,6 +365,83 @@ class PlatformCamera(private val context: Context) {
         // become no-ops after the first probe, matching TCAM's degradation.
         VendorKeys.Tran.asdMode.apply(req, 1)
         VendorKeys.Tran.brightnessValue.apply(req, 0)
+        applyMeteringMode(req)
+    }
+
+    /** Active metering selection — TCAM's `MeteringMode` ("auto"/"center"/"spot"/"average"). */
+    @Volatile private var meteringMode: String = "auto"
+
+    /** Active Pro-mode override state, re-applied on any repeating rebuild so a
+     *  vendor toggle never clobbers manual exposure/focus. */
+    @Volatile private var manualControls = ManualControls()
+
+    /** TCAM's `MeteringMode`: byte 0=center 1=spot 2=average on the MTK AE key. */
+    fun setMeteringMode(mode: String) {
+        meteringMode = mode
+        rebuildRepeating("metering mode $mode")
+    }
+
+    /** Writes the current metering selection into a capture request. */
+    private fun applyMeteringMode(req: CaptureRequest.Builder) {
+        if (meteringMode == "auto") return
+        val value = when (meteringMode) {
+            "center" -> 0
+            "spot" -> 1
+            "average" -> 2
+            else -> return
+        }
+        VendorKeys.Mtk.aeMeteringMode.apply(req, byteArrayOf(value.toByte()))
+    }
+
+    /** TCAM's `TranssionCameraMode` setting — 1/0 toggle, probe-gated. */
+    private var transsionCameraModeOn = false
+
+    fun setTranssionCameraMode(on: Boolean) {
+        transsionCameraModeOn = on
+        rebuildRepeating("transsion camera mode ${if (on) "on" else "off"}")
+    }
+
+    /** Applies the Transsion camera-mode toggle; no-op when the HAL says no. */
+    private fun applyTranssionCameraMode(req: CaptureRequest.Builder) {
+        val supported = characteristics()?.let { info ->
+            VendorKeys.Tran.istrancamera.read(info)?.any { it == 1 }
+        } == true
+        if (!supported) return
+        VendorKeys.Tran.transsionCameraMode.apply(req, intArrayOf(if (transsionCameraModeOn) 1 else 0))
+    }
+
+    /** Rebuilds the repeating request so a new vendor setting takes effect. */
+    private fun rebuildRepeating(reason: String) {
+        val s = session ?: return
+        val d = device ?: return
+        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        previewSurface?.let { req.addTarget(it) }
+        analysisReader?.surface?.let { req.addTarget(it) }
+        applyManualAndVendor3A(req)
+        recordingSurface?.let { req.addTarget(it) }
+        runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
+            .onFailure { Log.d(TAG, "rebuild after $reason failed: $it") }
+    }
+
+    /** Writes the active Pro overrides (or AUTO 3A) plus vendor toggles into a
+     *  preview request. Kept in one place so manual and auto rebuilds never drift. */
+    private fun applyManualAndVendor3A(req: CaptureRequest.Builder) {
+        val m = manualControls
+        if (m.iso != null || m.exposureTimeNs != null) {
+            req.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+            m.iso?.let { req.set(CaptureRequest.SENSOR_SENSITIVITY, it) }
+            m.exposureTimeNs?.let { req.set(CaptureRequest.SENSOR_EXPOSURE_TIME, it) }
+        } else {
+            req.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
+        }
+        m.wbMode?.let { req.set(CaptureRequest.CONTROL_AWB_MODE, it) }
+            ?: req.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO)
+        m.focusDistance?.let { fd ->
+            req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+            req.set(CaptureRequest.LENS_FOCUS_DISTANCE, fd)
+        } ?: req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+        applyVendorPreviewParams(req)
+        applyTranssionCameraMode(req)
     }
 
     /**
@@ -522,6 +597,10 @@ class PlatformCamera(private val context: Context) {
         VendorKeys.Tran.nightMode.apply(req, 1)
         VendorKeys.Mtk.hdrMode.apply(req, 1)
         VendorKeys.Mtk.zslMode.apply(req, 1)
+        // Metering + camera-mode selections ride the still requests too,
+        // matching TCAM's configParameters flow.
+        applyMeteringMode(req)
+        applyTranssionCameraMode(req)
     }
 
     /**
@@ -732,34 +811,14 @@ class PlatformCamera(private val context: Context) {
 
     /** Applies [controls] to the repeating request; nulls revert to auto. */
     fun setManualControls(controls: ManualControls) {
+        manualControls = controls
         val s = session ?: return
         val d = device ?: return
         val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
         previewSurface?.let { req.addTarget(it) }
         recordingSurface?.let { req.addTarget(it) }
         analysisReader?.surface?.let { req.addTarget(it) }
-        if (controls.iso != null || controls.exposureTimeNs != null) {
-            // Manual exposure needs AE off; the app owns the two 3A fields.
-            req.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
-            controls.iso?.let {
-                req.set(CaptureRequest.SENSOR_SENSITIVITY, it)
-            }
-            controls.exposureTimeNs?.let {
-                req.set(CaptureRequest.SENSOR_EXPOSURE_TIME, it)
-            }
-        } else {
-            req.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
-        }
-        controls.wbMode?.let {
-            req.set(CaptureRequest.CONTROL_AWB_MODE, it)
-        } ?: req.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO)
-        controls.focusDistance?.let { fd ->
-            req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-            req.set(CaptureRequest.LENS_FOCUS_DISTANCE, fd)
-        } ?: req.set(
-            CaptureRequest.CONTROL_AF_MODE,
-            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
-        )
+        applyManualAndVendor3A(req)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
             .onFailure { Log.e(TAG, "manual controls failed", it) }
     }

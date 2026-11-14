@@ -322,7 +322,8 @@ pub fn build_app1(tags: &[WriteTag]) -> TcamResult<Vec<u8>> {
     }
     let mut out = Vec::with_capacity(segment.len() + 8);
     out.extend_from_slice(&[0xff, 0xe1]);
-    out.extend_from_slice(&((segment.len() + 2) as u16).to_be_bytes());
+    // Length covers the two length bytes + "Exif\0\0" + the TIFF segment.
+    out.extend_from_slice(&((segment.len() + 8) as u16).to_be_bytes());
     out.extend_from_slice(b"Exif\x00\x00");
     out.extend_from_slice(&segment);
     Ok(out)
@@ -354,6 +355,20 @@ mod tests {
         assert_eq!(by_tag(tags::MODEL).string.as_deref(), Some("X6739"));
         assert_eq!(by_tag(tags::ORIENTATION).value, Some(6));
         assert_eq!(by_tag(tags::ORIENTATION).orientation_degrees(), Some(90));
+    }
+
+    #[test]
+    fn app1_length_field_matches_payload() {
+        let tags = vec![WriteTag::short(tags::ORIENTATION, 6)];
+        let app1 = build_app1(&tags).unwrap();
+        let len = u16::from_be_bytes([app1[2], app1[3]]) as usize;
+        // Everything after the 2 length bytes is counted, including the six
+        // bytes of "Exif\0\0" — the JPEG APP1 header convention that real
+        // decoders (BitmapFactory) skip by.
+        assert_eq!(len, app1.len() - 2);
+        // The marker (FF E1) isn't counted in the length field: marker + len
+        // must equal the whole APP1 segment.
+        assert_eq!(2 + len, app1.len());
     }
 
     #[test]

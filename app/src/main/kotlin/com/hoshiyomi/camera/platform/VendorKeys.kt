@@ -109,6 +109,8 @@ object VendorKeys {
         val mfnrMfb = RequestKey("com.mediatek.mfnrfeature.mfbmode", Int::class.java)
         val videoHfps = RequestKey("com.mediatek.streamingfeature.hfpsMode", Int::class.java)
         val multiCamMode = RequestKey("com.mediatek.multicamfeature.multiCamFeatureMode", Int::class.java)
+        // TCAM's MeteringMode setting writes 0=center / 1=spot / 2=average here.
+        val aeMeteringMode = RequestKey("com.mediatek.3afeature.aeMeteringMode", ByteArray::class.java)
         val proprietaryRequest = RequestKey(
             "com.mediatek.configure.setting.proprietaryRequest", Int::class.java,
             isSessionKey = true
@@ -126,9 +128,14 @@ object VendorKeys {
         val nightMode = RequestKey("com.transsion.nightMode", Int::class.java)
         val screenFlashMode = RequestKey("com.transsion.screenflashmode", Int::class.java)
         val magicSkyMode = RequestKey("com.transsion.magicskymode", Int::class.java)
+        // TCAM's TranssionCameraMode / CamMode settings both land on this int[]:
+        // CamMode → setAppModeId(value), TranssionCameraMode → 0/1 toggle.
+        val transsionCameraMode = RequestKey("com.transsion.transsioncameramode", IntArray::class.java)
         val brightnessValue = RequestKey(
             "com.transsion.brightnessValue", Int::class.java, isSessionKey = true
         )
+        // Probe: {1} when the HAL supports the transsion camera mode writes.
+        val istrancamera = CharacteristicsKey("com.transsion.istrancamera", IntArray::class.java)
 
         val faceBeautyAvailable = CharacteristicsKey(
             "com.transsion.availableFaceBeautyMode", IntArray::class.java

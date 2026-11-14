@@ -51,7 +51,11 @@ data class CameraUiState(
     /** Scene hint driven by vendor CaptureResult keys (ASD/MagicSky/Night). */
     val sceneHint: String? = null,
     /** Panorama frames captured / total, for the live pan guide. */
-    val panoProgress: Int = 0
+    val panoProgress: Int = 0,
+    /** Launched-for-result capture (TCAM IntentPhotoMode/IntentVideoMode). */
+    val isIntentMode: Boolean = false,
+    /** Captured-but-not-yet-confirmed still, shown as the review image. */
+    val intentReview: android.graphics.Bitmap? = null
 )
 
 /**
@@ -293,6 +297,203 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     private var openInFlight = false
 
+    // ---- Intent capture contract (TCAM IntentPhotoMode / IntentASDMode /
+    // IntentVideoMode): CaptureActivity launches us with `output`/`return-data`;
+    // the still is reviewed, then attached — written to the caller's URI,
+    // forwarded to the crop flow, or returned inline as a bitmap. ----
+
+    /** Result contract events consumed by [com.hoshiyomi.camera.CaptureActivity]. */
+    data class IntentResult(val ok: Boolean, val data: android.content.Intent? = null)
+
+    private val _intentResults = kotlinx.coroutines.flow.MutableSharedFlow<IntentResult>(extraBufferCapacity = 8)
+    val intentResults: kotlinx.coroutines.flow.SharedFlow<IntentResult> = _intentResults
+
+    @Volatile private var intentOutput: android.net.Uri? = null
+    @Volatile private var intentInline = false
+    @Volatile private var intentCrop: String? = null
+    @Volatile private var intentJpeg: ByteArray? = null
+
+    /** Faithful to `IntentPhotoMode.MAX_NUMBER_PIXELS` for the inline bitmap. */
+    private val intentMaxPixels = 51200
+
+    /** Arms the intent contract; [modeId] is photo/asd for stills, video for video. */
+    fun setupIntentCapture(modeId: String, output: android.net.Uri?, inline: Boolean, crop: String?) {
+        intentOutput = output
+        intentInline = inline
+        intentCrop = crop
+        intentJpeg = null
+        _state.update { it.copy(isIntentMode = true, intentReview = null) }
+        queueModeOnStart(modeId)
+    }
+
+    /** Back / caller cancels: RESULT_CANCELED, the framework's default result. */
+    fun cancelIntentCapture() {
+        intentJpeg = null
+        _state.update { it.copy(isIntentMode = false, intentReview = null) }
+        viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
+    }
+
+    /** ✗ on the review image — go back to the viewfinder. */
+    fun retakeIntentCapture() {
+        intentJpeg = null
+        _state.update { it.copy(intentReview = null) }
+    }
+
+    /** ✓ on the review image — run the attach path and hand the result back. */
+    fun confirmIntentCapture() {
+        val jpeg = intentJpeg
+        viewModelScope.launch {
+            if (jpeg == null) {
+                _intentResults.emit(IntentResult(false))
+                return@launch
+            }
+            val result = runCatching { attachIntentJpeg(jpeg) }
+                .getOrElse { Log.e(TAG, "intent attach failed", it); IntentResult(false) }
+            intentJpeg = null
+            _state.update { it.copy(isIntentMode = false, intentReview = null) }
+            _intentResults.emit(result)
+        }
+    }
+
+    /** `doAttach()` port: crop forward → save-URI → inline bitmap. */
+    private fun attachIntentJpeg(jpeg: ByteArray): IntentResult {
+        val crop = intentCrop
+        if (crop != null) {
+            // TCAM's attachToCropIntent: temp file → com.android.camera.action.CROP
+            // with output or return-data (+ circleCrop); the Activity forwards it.
+            val ctx = getApplication<Application>()
+            val tmp = java.io.File(ctx.cacheDir, "intent_crop.jpg")
+            tmp.outputStream().use { it.write(jpeg) }
+            val tmpUri = androidx.core.content.FileProvider.getUriForFile(
+                ctx, "${ctx.packageName}.fileprovider", tmp
+            )
+            val fwd = android.content.Intent("com.android.camera.action.CROP").apply {
+                data = tmpUri
+                putExtra("crop", crop)
+                if (crop.equals("circle", ignoreCase = true)) {
+                    putExtra("circleCrop", true)
+                }
+                if (intentOutput != null) {
+                    putExtra("output", intentOutput)
+                } else {
+                    putExtra("return-data", true)
+                }
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            return IntentResult(true, fwd)
+        }
+        val out = intentOutput
+        if (out != null) {
+            // attachToSaveUri: stream the JPEG into the caller's URI.
+            getApplication<Application>().contentResolver.openOutputStream(out)?.use { os ->
+                os.write(jpeg)
+            } ?: return IntentResult(false)
+            return IntentResult(true, null)
+        }
+        // attachToInLinedIntent: downscaled bitmap in extras "data".
+        val bmp = inlineIntentBitmap(jpeg) ?: return IntentResult(false)
+        val data = android.content.Intent("inline-data").apply {
+            putExtra("data", bmp)
+        }
+        return IntentResult(true, data)
+    }
+
+    /** Decodes ≤ 51200 px and bakes the EXIF orientation in, like
+     *  `BitmapUtils.rotateAndMirror(..., MAX_NUMBER_PIXELS, ...)` in TCAM. */
+    private fun inlineIntentBitmap(jpeg: ByteArray): android.graphics.Bitmap? {
+        val orientation = runCatching { NativeCore.exifOrientation(jpeg) }.getOrDefault(0)
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        var s = 1
+        while ((bounds.outWidth / s) * (bounds.outHeight / s) > intentMaxPixels) s *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = s
+        }
+        val small = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+            ?: return null
+        val rotation = when (orientation) {
+            90 -> 90f; 180 -> 180f; 270 -> 270f; else -> 0f
+        }
+        val out = if (rotation != 0f) {
+            val m = android.graphics.Matrix().apply { postRotate(rotation) }
+            android.graphics.Bitmap.createBitmap(small, 0, 0, small.width, small.height, m, true)
+                .also { if (it !== small) small.recycle() }
+        } else small
+        return out
+    }
+
+    /** Review thumbnail for the intent still — fit the viewfinder. */
+    private fun intentReviewBitmap(jpeg: ByteArray): android.graphics.Bitmap? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        var s = 1
+        while (bounds.outWidth / (s * 2) >= 1080) s *= 2
+        Log.d(TAG, "intent review: bytes=${jpeg.size} out=${bounds.outWidth}x${bounds.outHeight} sample=$s")
+        val opts = android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = s
+            inJustDecodeBounds = false
+        }
+        return android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+    }
+
+    /** Shutter press while in intent mode: capture and show the review. */
+    private fun captureIntentStill() {
+        _state.update { it.copy(isCapturing = true) }
+        camera.capture(
+            onJpeg = { jpeg ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    val processed = postProcessCapture(jpeg, "photo")
+                    val withExif = writeExif(processed, "photo")
+                    intentJpeg = withExif
+                    runCatching {
+                        val review = intentReviewBitmap(withExif)
+                        Log.d(TAG, "intent review bitmap: ${review?.let { "${it.width}x${it.height}" } ?: "null"}")
+                        _state.update { it.copy(isCapturing = false, intentReview = review) }
+                    }.onFailure { t ->
+                        Log.e(TAG, "intent review failed", t)
+                        _state.update { it.copy(isCapturing = false) }
+                    }
+                }
+            },
+            onError = { t ->
+                Log.e(TAG, "intent capture failed", t)
+                _state.update { it.copy(isCapturing = false) }
+                viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
+            }
+        )
+    }
+
+    /** IntentVideoMode.attachToSaveUri: deliver the recording to the caller. */
+    private suspend fun attachIntentVideo(savedFile: java.io.File): IntentResult {
+        val out = intentOutput
+        return if (out != null) {
+            getApplication<Application>().contentResolver.openOutputStream(out)?.use { os ->
+                savedFile.inputStream().use { it.copyTo(os) }
+            } ?: return IntentResult(false)
+            savedFile.delete()
+            IntentResult(true, null)
+        } else {
+            val uri = mediaSaver.saveVideo(savedFile) ?: return IntentResult(false)
+            IntentResult(true, android.content.Intent().apply {
+                data = uri
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        }
+    }
+
+    /** Quality/Aperture-style settings the VM needs from outside the composable:
+     *  the settings sheet reports selections here. */
+    private val settingSelections = mutableMapOf<String, Int>()
+
+    /** Per-mode settings applied from the settings sheet (Metering, TCM mode). */
+    fun onSettingSelected(key: String, index: Int) {
+        settingSelections[key] = index
+        when (key) {
+            "metering" -> camera.setMeteringMode(listOf("auto", "center", "spot", "average")[index])
+            "tcmode" -> camera.setTranssionCameraMode(index == 1)
+        }
+    }
+
     private fun maybeOpen() {
         if (resumed && previewTexture != null && !state.value.ready && !openInFlight) {
             openCamera(previewTexture!!, previewViewSize)
@@ -500,6 +701,10 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             "document" -> captureDocument()
             "supernight", "supernightfilter" -> captureNightStack()
             else -> {
+                if (s.isIntentMode) {
+                    captureIntentStill()
+                    return
+                }
                 _state.update { it.copy(isCapturing = true) }
                 camera.capture(
                     onJpeg = { jpeg ->
@@ -800,19 +1005,35 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
             override fun onFinished(savedFile: java.io.File) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    val uri = mediaSaver.saveVideo(savedFile)
-                    Log.d(TAG, "video saved: $uri")
+                    if (_state.value.isIntentMode) {
+                        val result = runCatching { attachIntentVideo(savedFile) }
+                            .getOrElse { Log.e(TAG, "intent video attach failed", it); IntentResult(false) }
+                        _state.update { it.copy(isIntentMode = false, isRecording = false) }
+                        _intentResults.emit(result)
+                    } else {
+                        val uri = mediaSaver.saveVideo(savedFile)
+                        Log.d(TAG, "video saved: $uri")
+                    }
                 }
                 recorder = null
-                camera.restorePreviewSession()
                 _state.update { it.copy(isRecording = false) }
+                if (!_state.value.isIntentMode) {
+                    camera.restorePreviewSession()
+                }
             }
 
             override fun onError(throwable: Throwable) {
                 Log.e(TAG, "recorder error", throwable)
+                // Don't strand an intent caller on camera error either —
+                // RESULT_CANCELED matches the original onError contract.
+                if (_state.value.isIntentMode) {
+                    _state.update { it.copy(isIntentMode = false, isRecording = false) }
+                    viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
+                } else {
+                    _state.update { it.copy(isRecording = false) }
+                }
                 recorder = null
                 camera.restorePreviewSession()
-                _state.update { it.copy(isRecording = false) }
             }
         })
     }
@@ -826,7 +1047,8 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun videoSettingValue(s: CameraUiState, key: String): String? {
         val setting = s.activeMode.settings().firstOrNull { it.key == key } ?: return null
-        return setting.values.getOrNull(setting.defaultIndex)
+        val index = settingSelections[key] ?: setting.defaultIndex
+        return setting.values.getOrNull(index)
     }
 
     /**
@@ -835,9 +1057,10 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
      */
     /**
      * Portrait capture pipeline, run entirely through the Rust core:
-     * JPEG → RGBA → face detect → frequency-separation beauty → optional
-     * bokeh → re-encode. This is the seat of the vendor `libeffect.so`
-     * FaceBeauty + `libstblur_preview_api.so` capture workloads.
+     * JPEG → RGBA → face detect → frequency-separation beauty → bokeh →
+     * re-encode. This is the seat of the vendor `libeffect.so` FaceBeauty +
+     * `libstblur_preview_api.so` capture workloads. The f-stop setting in the
+     * sheet maps onto `NativeCore.apertureRadius` for the blur radius.
      */
     private fun postProcessCapture(jpeg: ByteArray, modeId: String): ByteArray {
         // Beauty family: the original's MakeUpModeEntry / SdofPhotoModeEntry /
@@ -849,6 +1072,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             "makeup" -> 0.7f
             else -> return jpeg
         }
+        val isBokeh = modeId == "portrait" || modeId == "stblur"
         if (jpeg.size < 4) return jpeg
         return try {
             val bmp = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
@@ -879,6 +1103,45 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                 soften = 0.5f,
                 out = processed
             )
+            // Portrait: melt the backdrop outside the face ovals. Depth from
+            // the face detector — the original's `portraitSpot` pipeline.
+            // Aperture → blur radius through the Rust core; wider f-stop (smaller
+            // number) = wider opening = bigger bokeh.
+            if (isBokeh && faces.isNotEmpty()) {
+                val fStop = settingSelections["aperture"]
+                    ?.let { listOf(1.8f, 2.8f, 4.0f, 5.6f).getOrNull(it) }
+                    ?: 2.8f
+                val short = minOf(w, h)
+                val radius = com.hoshiyomi.camera.native.NativeCore.apertureRadius(fStop, short)
+                if (radius > 0) {
+                    val depth = ByteArray(w * h) // background = far (0)
+                    // Scan only each face's bounding box — writing into the
+                    // full frame per face would be O(frames × pixels).
+                    for (fi in 0 until faces.size / 4) {
+                        val cx = (faces[fi * 4] + faces[fi * 4 + 2] / 2f) * w
+                        val cy = (faces[fi * 4 + 1] + faces[fi * 4 + 3] / 2f) * h
+                        val r = maxOf(faces[fi * 4 + 2] * w, faces[fi * 4 + 3] * h) * 0.55f
+                        val x0 = (cx - r).toInt().coerceIn(0, w - 1)
+                        val x1 = (cx + r).toInt().coerceIn(0, w - 1)
+                        val y0 = (cy - r).toInt().coerceIn(0, h - 1)
+                        val y1 = (cy + r).toInt().coerceIn(0, h - 1)
+                        for (y in y0..y1) {
+                            for (x in x0..x1) {
+                                val dx = x - cx; val dy = y - cy
+                                if (dx * dx + dy * dy < r * r) depth[y * w + x] = 255.toByte()
+                            }
+                        }
+                    }
+                    val blurred = ByteArray(processed.size)
+                    com.hoshiyomi.camera.native.NativeCore.gaussianBlur(processed, w, h, radius, blurred)
+                    val composite = ByteArray(processed.size)
+                    com.hoshiyomi.camera.native.NativeCore.compositeBokeh(
+                        sharp = processed, blurred = blurred, mask = depth,
+                        width = w, height = h, edgeSoftness = 4, out = composite
+                    )
+                    System.arraycopy(composite, 0, processed, 0, processed.size)
+                }
+            }
             val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
             for (i in pixels.indices) {
                 val r = processed[i * 4].toInt() and 0xff
@@ -929,9 +1192,11 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             val len = ((jpeg[off + 2].toInt() and 0xFF) shl 8) or (jpeg[off + 3].toInt() and 0xFF)
             off += 2 + len
         }
-        val out = ByteArray(jpeg.size - off + app1.size)
-        System.arraycopy(app1, 0, out, 0, app1.size)
-        System.arraycopy(jpeg, off, out, app1.size, jpeg.size - off)
+        // Rebuild: SOI + our APP1 + everything past the last legacy APP1.
+        val out = ByteArray(jpeg.size - off + app1.size + 2)
+        out[0] = 0xFF.toByte(); out[1] = 0xD8.toByte()
+        System.arraycopy(app1, 0, out, 2, app1.size)
+        System.arraycopy(jpeg, off, out, 2 + app1.size, jpeg.size - off)
         return out
     }
 

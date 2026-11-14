@@ -109,7 +109,9 @@ object ModeRegistry {
         override val isVideo = false
         override fun settings() = listOf(
             ModeSetting("iso", "ISO", listOf("Auto", "100", "200", "400", "800", "1600")),
-            ModeSetting("wb", "White balance", listOf("Auto", "Daylight", "Cloudy", "Incandescent"))
+            ModeSetting("wb", "White balance", listOf("Auto", "Daylight", "Cloudy", "Incandescent")),
+            // TCAM's MeteringMode: auto/center/spot/average (professional scope).
+            ModeSetting("metering", "Metering", listOf("Auto", "Center", "Spot", "Average"))
         )
     }
 

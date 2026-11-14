@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
@@ -38,12 +39,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -128,7 +131,10 @@ fun CameraScreen(
         SettingsSheet(
             mode = state.activeMode,
             selections = selections,
-            onSelect = { key, index -> selections[key] = index },
+            onSelect = { key, index ->
+                selections[key] = index
+                viewModel.onSettingSelected(key, index)
+            },
             onDismiss = { showSettings = false }
         )
     }
@@ -289,20 +295,66 @@ fun CameraScreen(
                 QrResultChip(text = state.lastQr!!, onClear = viewModel::clearQr)
                 Spacer(Modifier.height(16.dp))
             }
-            ModePicker(
-                modes = state.modes,
-                activeId = state.activeMode.id,
-                onSelect = viewModel::selectMode
-            )
+            // The intent-capture activity has no mode grid — the caller picked
+            // the capture kind (TCAM's CaptureActivity hosts IntentPhotoMode).
+            if (!state.isIntentMode) {
+                ModePicker(
+                    modes = state.modes,
+                    activeId = state.activeMode.id,
+                    onSelect = viewModel::selectMode
+                )
+            }
             Spacer(Modifier.height(24.dp))
             ShutterRow(
                 isVideo = state.activeMode.isVideo,
                 isRecording = state.isRecording,
                 onShutter = viewModel::onShutter,
                 onOpenScanner = onOpenScanner,
-                canCapture = state.ready
+                canCapture = state.ready,
+                intentMode = state.isIntentMode,
+                onCancel = viewModel::cancelIntentCapture
             )
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    // Intent still review: captured, waiting for the caller's confirm — the
+    // original's IntentReviewUI (retake / done over the full-frame preview).
+    state.intentReview?.let { review ->
+        IntentReviewOverlay(
+            bitmap = review,
+            onRetake = viewModel::retakeIntentCapture,
+            onConfirm = viewModel::confirmIntentCapture
+        )
+    }
+}
+
+@Composable
+private fun IntentReviewOverlay(
+    bitmap: android.graphics.Bitmap,
+    onRetake: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f))) {
+        androidx.compose.foundation.Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = "Captured photo",
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier.fillMaxSize()
+        )
+        Row(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = onRetake) {
+                Text("Retake", color = Color.White)
+            }
+            FilledTonalButton(onClick = onConfirm) {
+                Text("OK")
+            }
         }
     }
 }
@@ -346,14 +398,24 @@ private fun ShutterRow(
     isRecording: Boolean,
     onShutter: () -> Unit,
     onOpenScanner: () -> Unit,
-    canCapture: Boolean
+    canCapture: Boolean,
+    intentMode: Boolean = false,
+    onCancel: () -> Unit = {}
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(32.dp)
     ) {
-        OutlinedIconButton(onClick = onOpenScanner, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Default.QrCodeScanner, "Scanner", tint = Color.White)
+        if (intentMode) {
+            // Intent capture replaces the scanner slot with a cancel control —
+            // the caller expects a result even when the user backs out.
+            OutlinedIconButton(onClick = onCancel, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Close, "Cancel", tint = Color.White)
+            }
+        } else {
+            OutlinedIconButton(onClick = onOpenScanner, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.QrCodeScanner, "Scanner", tint = Color.White)
+            }
         }
         FilledIconButton(
             onClick = onShutter,
