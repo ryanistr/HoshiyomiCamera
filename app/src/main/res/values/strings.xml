@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Stargazer Camera</string>
+    <string name="mode_photo">Photo</string>
+    <string name="mode_video">Video</string>
+    <string name="mode_portrait">Portrait</string>
+    <string name="mode_night">Super Night</string>
+    <string name="mode_pro">Pro</string>
+    <string name="mode_barcode">Scanner</string>
+</resources>

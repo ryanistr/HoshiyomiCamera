@@ -1,0 +1,42 @@
+# build outputs (Android)
+app/build
+app/.cxx
+app/local.properties
+local.properties
+.gradle/
+build/
+kotlin/
+.kotlin/
+IDE*
+
+# Build outputs (Rust)
+rust/hoshiyomi-core/target/
+rust/hoshiyomi-core/.cargo/registry/
+
+# Device RECORDING / artifacts (debug only)
+*.apk
+*.ap_
+*.obb
+*.dtbo
+.apks
+*.jks
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.codelocks
+*device-state.json
+
+# Work evidence (RE dumps). The analysis text files are kept for documentation;
+# the 140MB+ decompiled class dump and its resources are not source.
+work/jout/
+work/resdump.txt
+work/resdump_v.txt
+
+# System files
+.DS_Store
+Thumbs.db
+*.db-journal
+*.dalvik
