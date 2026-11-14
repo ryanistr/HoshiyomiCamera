@@ -976,8 +976,14 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                         Log.d(TAG, "video saved: $uri")
                     }
                     companionSaved?.let { f ->
-                        val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
-                        Log.d(TAG, "companion video saved: $uri")
+                        val len = runCatching { f.length() }.getOrDefault(0L)
+                        if (len > 0L) {
+                            val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
+                            Log.d(TAG, "companion video saved: $uri bytes=$len")
+                        } else {
+                            Log.w(TAG, "companion video empty, skipping save: ${f.absolutePath}")
+                            runCatching { f.delete() }
+                        }
                     }
                     _state.update { it.copy(isRecording = false) }
                 }
@@ -1030,6 +1036,8 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                             )
                         }
                         override fun onFinished(savedFile: java.io.File) {
+                            val len = runCatching { savedFile.length() }.getOrDefault(0L)
+                            Log.d(TAG, "companion recorder finished: ${savedFile.name} bytes=$len")
                             companionSaved = savedFile
                             val intentMode = _state.value.isIntentMode
                             maybeFinishDual(intentMode)

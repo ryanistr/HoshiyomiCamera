@@ -36,6 +36,12 @@ class MediaSaver(private val context: Context) {
     }
 
     fun saveVideo(file: File): Uri? {
+        if (!file.exists()) return null
+        val length = runCatching { file.length() }.getOrDefault(0L)
+        if (length <= 0L) {
+            runCatching { file.delete() }
+            return null
+        }
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
@@ -43,6 +49,7 @@ class MediaSaver(private val context: Context) {
                 put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/Stargazer")
                 put(MediaStore.Video.Media.IS_PENDING, 1)
             }
+            put(MediaStore.Video.Media.SIZE, length)
         }
         val resolver = context.contentResolver
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -51,7 +58,13 @@ class MediaSaver(private val context: Context) {
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
         val uri = resolver.insert(collection, values) ?: return null
-        resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
+        val copied = runCatching {
+            resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } != null
+        }.getOrDefault(false)
+        if (!copied) {
+            runCatching { resolver.delete(uri, null, null) }
+            return null
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             values.clear()
             values.put(MediaStore.Video.Media.IS_PENDING, 0)

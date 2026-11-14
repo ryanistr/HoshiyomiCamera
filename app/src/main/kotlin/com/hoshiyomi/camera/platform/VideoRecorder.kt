@@ -131,31 +131,42 @@ class VideoRecorder private constructor(
 
     private fun drainVideo() {
         val bufferInfo = MediaCodec.BufferInfo()
+        val eosDeadlineNs = java.util.concurrent.atomic.AtomicLong(0L)
         try {
-            while (running.get()) {
+            while (true) {
                 val codec = videoCodec ?: return
-                when (val idx = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)) {
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> if (!running.get()) return
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                val idx = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+                when {
+                    idx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        if (running.get()) continue
+                        val now = System.nanoTime()
+                        if (eosDeadlineNs.get() == 0L) {
+                            eosDeadlineNs.set(now + 3_000_000_000L)
+                        }
+                        if (now > eosDeadlineNs.get()) return
+                    }
+                    idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val newFormat = codec.outputFormat
                         muxer?.let { m ->
-                            videoTrack = m.addTrack(newFormat)
-                            maybeStartMuxer()
-                        }
-                    }
-                    else -> {
-                        if (idx < 0) return
-                        val data: ByteBuffer = codec.getOutputBuffer(idx) ?: return
-                        if (bufferInfo.size > 0 && bufferInfo.presentationTimeUs > 0) {
-                            data.position(bufferInfo.offset)
-                            data.limit(bufferInfo.offset + bufferInfo.size)
-                            if (muxerStarted.get() && isSampleFlag(bufferInfo)) {
-                                muxer?.writeSampleData(videoTrack, data, bufferInfo)
+                            if (videoTrack < 0) {
+                                videoTrack = m.addTrack(newFormat)
+                                maybeStartMuxer()
                             }
                         }
-                        codec.releaseOutputBuffer(idx, false)
+                    }
+                    idx >= 0 -> {
+                        val data: ByteBuffer? = codec.getOutputBuffer(idx)
+                        val doWrite = data != null && bufferInfo.size > 0 && muxerStarted.get() &&
+                            videoTrack >= 0 && isSampleFlag(bufferInfo)
+                        if (doWrite) {
+                            data!!.position(bufferInfo.offset)
+                            data.limit(bufferInfo.offset + bufferInfo.size)
+                            try { muxer?.writeSampleData(videoTrack, data, bufferInfo) } catch (_: Throwable) {}
+                        }
+                        try { codec.releaseOutputBuffer(idx, false) } catch (_: Throwable) {}
                         if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                     }
+                    else -> return
                 }
             }
         } catch (t: Throwable) {

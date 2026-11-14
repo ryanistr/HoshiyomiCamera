@@ -320,10 +320,11 @@ class PlatformCamera(private val context: Context) {
     fun startRepeating() {
         val s = session ?: return
         val d = device ?: return
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
-        recordingSurface?.let { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
         applyManualAndVendor3A(req)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
@@ -345,10 +346,11 @@ class PlatformCamera(private val context: Context) {
     private fun startRepeatingWithProfile(info: CameraCharacteristics) {
         val s = session ?: return
         val d = device ?: return
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        recordingSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
         try {
             profile.applyPreview(req, info)
@@ -414,11 +416,12 @@ class PlatformCamera(private val context: Context) {
     private fun rebuildRepeating(reason: String) {
         val s = session ?: return
         val d = device ?: return
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
         applyManualAndVendor3A(req)
-        recordingSurface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
             .onFailure { Log.d(TAG, "rebuild after $reason failed: $it") }
     }
@@ -528,17 +531,15 @@ class PlatformCamera(private val context: Context) {
 
     private var jpegHandler: ((ByteArray) -> Unit)? = null
 
-    private var recordingSurface: Surface? = null
+    private var recordingSurfaces: List<Surface> = emptyList()
+    @Volatile private var dualRecording: Boolean = false
 
-    /**
-     * Rebuilds the capture session to include the video encoder's input
-     * surface. Recording then rides on the same repeating request as preview;
-     * [restorePreviewSession] tears the recorder surface back out.
-     */
     /**
      * Rebuilds the capture session to include one or more video encoder
      * surfaces. DualVideo passes two surfaces (main + companion stream) — the
      * same multi-surface session organization TCAM's `CameraDataChannel` uses.
+     * Recording rides on the same repeating request as preview; all recorder
+     * surfaces must be targeted by that request for frames to flow.
      */
     fun beginVideoRecording(
         vararg recorderSurfaces: Surface,
@@ -546,15 +547,25 @@ class PlatformCamera(private val context: Context) {
     ) {
         val s = session ?: run { onError(IllegalStateException("session closed")); return }
         val d = device ?: run { onError(IllegalStateException("camera closed")); return }
+        val uniqueRecorders = recorderSurfaces.filterNotNull().distinct()
+        val dual = uniqueRecorders.size > 1
         runCatching { s.stopRepeating() }
-        val targets = listOfNotNull(previewSurface, *recorderSurfaces, analysisReader?.surface)
+        // Multi-surface dual recording can exceed guaranteed stream combinations
+        // on some HALs when analysis/filter surfaces are included; prefer the
+        // recorder surfaces for correctness in dual mode.
+        val targets = if (dual) {
+            listOfNotNull(previewSurface) + uniqueRecorders
+        } else {
+            listOfNotNull(previewSurface, analysisReader?.surface) + uniqueRecorders
+        }
         try {
             d.createCaptureSession(
-                targets,
+                targets.distinct(),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(sess: CameraCaptureSession) {
                         session = sess
-                        recordingSurface = recorderSurfaces.firstOrNull()
+                        recordingSurfaces = uniqueRecorders
+                        dualRecording = dual
                         startRepeating()
                     }
 
@@ -580,7 +591,8 @@ class PlatformCamera(private val context: Context) {
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(sess: CameraCaptureSession) {
                         session = sess
-                        recordingSurface = null
+                        recordingSurfaces = emptyList()
+                        dualRecording = false
                         startRepeating()
                     }
 
@@ -814,10 +826,11 @@ class PlatformCamera(private val context: Context) {
         manualControls = controls
         val s = session ?: return
         val d = device ?: return
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        recordingSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
         applyManualAndVendor3A(req)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
             .onFailure { Log.e(TAG, "manual controls failed", it) }
@@ -833,10 +846,11 @@ class PlatformCamera(private val context: Context) {
         val maxSteps = kotlin.math.abs(range?.lower?.toFloat() ?: 0f)
         if (maxSteps <= 0f || step == null) return
         val steps = (bias * maxSteps).toInt()
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        recordingSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, steps)
         req.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
@@ -849,11 +863,12 @@ class PlatformCamera(private val context: Context) {
         val ch = characteristics() ?: return
         val max = ch.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.upper ?: 1f
         val r = ratio.coerceIn(1f, max.coerceAtLeast(1f))
-        val req = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        val template = if (recordingSurfaces.isNotEmpty()) CameraDevice.TEMPLATE_RECORD else CameraDevice.TEMPLATE_PREVIEW
+        val req = d.createCaptureRequest(template)
         previewSurface?.let { req.addTarget(it) }
-        analysisReader?.surface?.let { req.addTarget(it) }
+        if (!dualRecording) analysisReader?.surface?.let { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_ZOOM_RATIO, r)
-        recordingSurface?.let { req.addTarget(it) }
+        recordingSurfaces.forEach { req.addTarget(it) }
         req.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
         runCatching { s.setRepeatingRequest(req.build(), repeatingCaptureCallback, backgroundHandler) }
     }
