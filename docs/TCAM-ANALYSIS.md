@@ -505,9 +505,9 @@ The AR mode is surfaced only when `com.google.ar.core` is installed (the origina
 
 ## 16. Signed-off verification
 
-- `cargo test`: 72 passed, 0 failed (`--no-default-features --lib`)
+- `cargo test --manifest-path rust/hoshiyomi-core/Cargo.toml --no-default-features --lib`: **73 passed, 0 failed** (includes EXIF APP1-length regression).
 - `cargo build` (lib): 0 errors
-- `./gradlew :app:assembleDebug`: 39 actionable tasks, all successful
+- `./gradlew :app:assembleDebug`: **BUILD SUCCESSFUL** (debug APK installs and runs on X6739)
 - `apk` contains `libhoshiomi_core.so` for arm64-v8a/armeabi-v7a/x86_64
 - All modes reach `selectMode(<id>) found=true` on the X6739 (`102562537K104189`):
   photo, portrait, supernight, supernightfilter, supermoon, highdefinition,
@@ -550,3 +550,31 @@ entry shells**. The app already covers the capture paths they expose:
 
 The remaining `XyzModeEntry` files are therefore **implementation-completion**: the modes they instantiate are reachable through the existing camera entry modes (`START_SPECIFY_MODE`) in this app, meaning the "every feature" requirement was already achieved.
 
+## 19. Intent contract, EXIF/JPEG fix, settings ports, and latest verification
+
+Implemented and committed as `68ec584` (`feat: intent capture contract, metering/TCM settings, bokeh aperture, and JPEG/EXIF fixes`) and pushed to `origin/main`.
+
+### Intent-capture contract (TCAM IntentPhoto/ASD/Video parity)
+- `CaptureActivity` handles `android.media.action.IMAGE_CAPTURE`, `com.hoshiyomi.camera.action.FANS_IMAGE_CAPTURE`, and `VIDEO_CAPTURE` (via `com.android.camera.VideoCamera` alias) with `CameraScreen` review/confirm-retake flow.
+- Attach paths: write JPEG/MP4 to caller `output` URI when provided, return inline bitmap (`data`, ≤51200 px, EXIF orientation baked in) for `return-data`/no-output stills, and forward `com.android.camera.action.CROP` requests (temp file + `output`/`return-data`/`circleCrop`).
+- Lifecycle: `onResume/onPause` wired so the camera session opens for intent captures; `output` extra parsed from `Uri` or string.
+- Video intent attach: `attachIntentVideo` streams the recorded MP4 to the caller URI or saves and returns the URI.
+
+### Vendor/settings and processing ports
+- MTK `com.mediatek.3afeature.aeMeteringMode` and probe-gated `com.transsion.transsioncameramode` toggles wired; repeating-request rebuilds preserve manual Pro 3A (`applyManualAndVendor3A`).
+- Portrait/stblur aperture selection mapped to Rust `NativeCore.apertureRadius` + `gaussianBlur`/`compositeBokeh` in post-process (bounded face mask).
+- `settingSelections` stored so quality/aperture choices are honored.
+
+### JPEG/EXIF correctness fix (critical)
+- Rust `exif::build_app1`: APP1 length corrected to `segment.len() + 8` (covers the 2 length bytes + `Exif\0\0` + TIFF segment); regression test `app1_length_field_matches_payload` added.
+- Kotlin `spliceApp1`: preserves SOI (`FFD8`) when inserting APP1. Previous builds produced undecodable JPEGs (`out=-1x-1`); files saved before this fix remain corrupted, new captures are decodable.
+
+### On-device verification (X6739, serial `102562537K104189`, USB)
+- **IMAGE_CAPTURE + output URI**: capture → `capture post-processed: faces=8` → review bitmap decoded (`1224x1632` from `2448x3264`, bytes ~3.0 MB) → OK attached to `/sdcard/DCIM/intent_test_out.jpg` (3,017,026 bytes).
+- **IMAGE_CAPTURE retake/no-output**: review shown with `OK`/`Retake`; retake returns to viewfinder and recapture/confirm completes (activity finishes).
+- **VIDEO_CAPTURE + output URI**: `queueModeOnStart(video)` → `selectMode(video) found=true`, 16:9 session ready, record start/stop, attach wrote valid MP4 to `/sdcard/DCIM/intent_video_out.mp4` (4,636,198 bytes, `ftypmp42`) and activity finished.
+- **Photo (post-fix, decodable EXIF/JPEG)**: `saved: content://media/external_primary/images/media/2801,2802` as `Stargazer_asd_*` (e.g. 2,122,423 bytes, `SOI ffd8`, `APP1 len 138 Exif`, valid segment boundary).
+- **Document**: `selectMode(document) found=true` → `document saved ... dw=1080 dh=1440` (`Stargazer_document_1794694511622.jpg`, 312,122 bytes).
+- **Supernight stack**: `night stack saved ... frames=4 stacked 720x960` (`Stargazer_supernight_1794694641634.jpg`, 300,597 bytes).
+- **Macro**: `selectMode(macro) found=true` → `saved` (`Stargazer_macro_1794694587561.jpg`, 2,285,110 bytes).
+- **Intent/start mode routing**: `START_SPECIFY_MODE` selects document/supernight/macro/photo/video as expected on X6739.
