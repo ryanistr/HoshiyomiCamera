@@ -516,3 +516,15 @@ The AR mode is surfaced only when `com.google.ar.core` is installed (the origina
 - Video: `video saved: content://media/external_primary/video/media/2759`
 - Panorama: `panorama saved ... canvasW=2970 dxs=[270, 0]` (motion-gated, ends saved)
 - AR: `AR session resumed`, no draw failures, back → Camera2 picks up the camera
+
+## 17. GitHub repository
+
+The ProjectTCAM source (Kotlin app + Rust core + vendor analysis) is published at
+https://github.com/ryanistr/ProjectTCAM (ryanistr). 
+
+Repo contents and policy:
+- `app/src/main/kotlin/` — the App/Kotlin layer (18 sources: UI, platform, AR, mode, native)
+- `rust/hoshiyomi-core/src/` — 10 Rust modules, single `libhoshiomi_core.so` in `app/src/main/jniLibs/` (build-generated, gitignored)
+- `docs/`, `README.md` — architecture report and build notes
+- `work/` — RE evidence text files (jadx dumps/`r*dump` banned, `work/jout/` excluded at 142 MB)
+- `.gitignore` excludes `target/`, `app/build/`, `.gradle/`, `app/src/main/jniLibs/` (generated `.so`s) so no build artifact is pushed
