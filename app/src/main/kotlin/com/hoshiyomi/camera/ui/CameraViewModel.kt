@@ -17,6 +17,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -950,11 +951,50 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             file, quality, frameRate = fps, withAudio = true
         )
         recorder = rec
+
+        // Dual-video coordination: both recorders must finish before we restore
+        // the preview session and clear recording state, otherwise the companion
+        // stream can be truncated.
+        val dualExpected = java.util.concurrent.atomic.AtomicInteger(if (isDual) 2 else 1)
+        val dualDone = java.util.concurrent.atomic.AtomicInteger(0)
+        var mainSaved: java.io.File? = null
+        var companionSaved: java.io.File? = null
+        fun maybeFinishDual(intentMode: Boolean) {
+            if (dualDone.incrementAndGet() < dualExpected.get()) return
+            viewModelScope.launch(Dispatchers.IO) {
+                if (intentMode) {
+                    val target = mainSaved ?: companionSaved
+                    val result = if (target != null) {
+                        runCatching { attachIntentVideo(target) }
+                            .getOrElse { Log.e(TAG, "intent video attach failed", it); IntentResult(false) }
+                    } else IntentResult(false)
+                    _state.update { it.copy(isIntentMode = false, isRecording = false) }
+                    _intentResults.emit(result)
+                } else {
+                    mainSaved?.let { f ->
+                        val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
+                        Log.d(TAG, "video saved: $uri")
+                    }
+                    companionSaved?.let { f ->
+                        val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
+                        Log.d(TAG, "companion video saved: $uri")
+                    }
+                    _state.update { it.copy(isRecording = false) }
+                }
+                recorder = null
+                companionRecorder = null
+                if (!intentMode) {
+                    withContext(Dispatchers.Main) { camera.restorePreviewSession() }
+                }
+            }
+        }
+
         rec.start(object : com.hoshiyomi.camera.platform.VideoRecorder.Listener {
             override fun onStarted() {
                 val surface = recorder?.inputSurface
                 if (surface == null) {
                     _state.update { it.copy(isRecording = false) }
+                    dualExpected.set(0)
                     return
                 }
                 if (!isDual) {
@@ -969,12 +1009,13 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 } else {
                     val companionFile = java.io.File(app.cacheDir, displayName("dualvideo") + "_companion.mp4")
-                    companionRecorder = com.hoshiyomi.camera.platform.VideoRecorder.create(
+                    val comp = com.hoshiyomi.camera.platform.VideoRecorder.create(
                         companionFile,
                         com.hoshiyomi.camera.platform.VideoRecorder.QUALITY_720P,
                         frameRate = fps, withAudio = false
                     )
-                    companionRecorder?.start(object : com.hoshiyomi.camera.platform.VideoRecorder.Listener {
+                    companionRecorder = comp
+                    comp.start(object : com.hoshiyomi.camera.platform.VideoRecorder.Listener {
                         override fun onStarted() {
                             val surfaces = listOfNotNull(surface, companionRecorder?.inputSurface)
                             camera.beginVideoRecording(
@@ -984,19 +1025,20 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                                     recorder?.stop(); companionRecorder?.stop()
                                     recorder = null; companionRecorder = null
                                     _state.update { it.copy(isRecording = false) }
+                                    dualExpected.set(0)
                                 }
                             )
                         }
                         override fun onFinished(savedFile: java.io.File) {
-                            viewModelScope.launch(Dispatchers.IO) {
-                                val uri = mediaSaver.saveVideo(savedFile)
-                                Log.d(TAG, "companion video saved: $uri")
-                            }
-                            companionRecorder = null
+                            companionSaved = savedFile
+                            val intentMode = _state.value.isIntentMode
+                            maybeFinishDual(intentMode)
                         }
                         override fun onError(throwable: Throwable) {
                             Log.e(TAG, "companion recorder error", throwable)
-                            companionRecorder = null
+                            companionSaved = null
+                            val intentMode = _state.value.isIntentMode
+                            maybeFinishDual(intentMode)
                         }
                     })
                 }
@@ -1004,36 +1046,32 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onFinished(savedFile: java.io.File) {
-                viewModelScope.launch(Dispatchers.IO) {
-                    if (_state.value.isIntentMode) {
-                        val result = runCatching { attachIntentVideo(savedFile) }
-                            .getOrElse { Log.e(TAG, "intent video attach failed", it); IntentResult(false) }
-                        _state.update { it.copy(isIntentMode = false, isRecording = false) }
-                        _intentResults.emit(result)
-                    } else {
-                        val uri = mediaSaver.saveVideo(savedFile)
-                        Log.d(TAG, "video saved: $uri")
-                    }
-                }
-                recorder = null
-                _state.update { it.copy(isRecording = false) }
-                if (!_state.value.isIntentMode) {
-                    camera.restorePreviewSession()
-                }
+                mainSaved = savedFile
+                val intentMode = _state.value.isIntentMode
+                maybeFinishDual(intentMode)
             }
 
             override fun onError(throwable: Throwable) {
                 Log.e(TAG, "recorder error", throwable)
-                // Don't strand an intent caller on camera error either —
-                // RESULT_CANCELED matches the original onError contract.
-                if (_state.value.isIntentMode) {
-                    _state.update { it.copy(isIntentMode = false, isRecording = false) }
-                    viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
+                val intentMode = _state.value.isIntentMode
+                mainSaved = null
+                // For dual, let companion finish/error too if it was started.
+                if (dualExpected.get() <= 1) {
+                    recorder = null
+                    companionRecorder?.stop()
+                    companionRecorder = null
+                    if (intentMode) {
+                        _state.update { it.copy(isIntentMode = false, isRecording = false) }
+                        viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
+                    } else {
+                        _state.update { it.copy(isRecording = false) }
+                        viewModelScope.launch(Dispatchers.Main) { camera.restorePreviewSession() }
+                    }
                 } else {
-                    _state.update { it.copy(isRecording = false) }
+                    recorder = null
+                    companionRecorder?.stop()
+                    maybeFinishDual(intentMode)
                 }
-                recorder = null
-                camera.restorePreviewSession()
             }
         })
     }

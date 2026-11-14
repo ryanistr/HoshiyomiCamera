@@ -188,52 +188,120 @@ class VideoRecorder private constructor(
             val minBuf = AudioRecord.getMinBufferSize(
                 AUDIO_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
             )
-            val audioRecord = AudioRecord(
+            val bufferSize = (minBuf * 2).coerceAtLeast(4096)
+            val recorder = AudioRecord(
                 android.media.MediaRecorder.AudioSource.MIC,
                 AUDIO_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
-                minBuf * 2
+                bufferSize
             )
-            this.audioRecord = audioRecord
+            audioRecord = recorder
             val format = MediaFormat.createAudioFormat(
                 MediaFormat.MIMETYPE_AUDIO_AAC, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT
             ).apply {
                 setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
                 setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, minBuf * 2)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize)
             }
             val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             codec.start()
             audioCodec = codec
 
-            // Wait until the muxer has both tracks before the first AAC packet.
-            val buffer = ByteArray(minBuf)
+            val buffer = ByteArray(minBuf.coerceAtLeast(2048))
             val info = MediaCodec.BufferInfo()
-            audioRecord.startRecording()
+            recorder.startRecording()
+            var eosSent = false
             while (running.get() && !Thread.currentThread().isInterrupted) {
-                val read = audioRecord.read(buffer, 0, buffer.size)
-                if (read <= 0) continue
-                val inIdx = codec.dequeueInputBuffer(TIMEOUT_US)
-                if (inIdx >= 0) {
-                    val ib = codec.getInputBuffer(inIdx) ?: continue
-                    ib.clear()
-                    ib.put(buffer, 0, read)
-                    codec.queueInputBuffer(
-                        inIdx, 0, read,
-                        System.nanoTime() / 1000,
-                        if (!running.get()) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
-                    )
+                val read = try {
+                recorder.read(buffer, 0, buffer.size)
+            } catch (_: InterruptedException) {
+                break
+            } catch (_: Throwable) {
+                -1
+            }
+                if (read > 0) {
+                    queueAudioInput(codec, buffer, read, endOfStream = false)
+                } else if (read == AudioRecord.ERROR_BAD_VALUE || read == AudioRecord.ERROR_INVALID_OPERATION) {
+                    break
                 }
                 drainAudioOnce(codec, info)
             }
-            try {
-                audioRecord.stop()
-            } catch (t: Throwable) { Log.w(TAG, "audio stop", t) }
-            drainAudioOnce(codec, info, flush = true)
+            if (!eosSent) {
+                eosSent = queueAudioInput(codec, ByteArray(0), 0, endOfStream = true)
+            }
+            try { recorder.stop() } catch (t: Throwable) { Log.w(TAG, "audio stop", t) }
+            drainAudioUntilEos(codec, info)
         } catch (t: Throwable) {
             Log.e(TAG, "audio thread failed", t)
+        }
+    }
+
+    private fun queueAudioInput(
+        codec: MediaCodec,
+        data: ByteArray,
+        size: Int,
+        endOfStream: Boolean
+    ): Boolean {
+        val flags = if (endOfStream) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val inIdx = try {
+                codec.dequeueInputBuffer(TIMEOUT_US)
+            } catch (_: Throwable) {
+                return false
+            }
+            if (inIdx >= 0) {
+                val ib = codec.getInputBuffer(inIdx) ?: return false
+                ib.clear()
+                if (size > 0) {
+                    ib.put(data, 0, size)
+                }
+                val pts = System.nanoTime() / 1000
+                try {
+                    codec.queueInputBuffer(inIdx, 0, size.coerceAtLeast(0), pts, flags)
+                    return true
+                } catch (_: Throwable) {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    private fun drainAudioUntilEos(codec: MediaCodec, info: MediaCodec.BufferInfo) {
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val idx = try {
+                codec.dequeueOutputBuffer(info, 100_000L)
+            } catch (_: Throwable) {
+                return
+            }
+            when {
+                idx == MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    audioCodec?.outputFormat?.let { f ->
+                        muxer?.let { m ->
+                            if (audioTrack < 0) {
+                                audioTrack = m.addTrack(f)
+                                maybeStartMuxer()
+                            }
+                        }
+                    }
+                }
+                idx >= 0 -> {
+                    val data = codec.getOutputBuffer(idx)
+                    if (data != null && info.size > 0 && muxerStarted.get() && audioTrack >= 0) {
+                        data.position(info.offset)
+                        data.limit(info.offset + info.size)
+                        try { muxer?.writeSampleData(audioTrack, data, info) } catch (_: Throwable) {}
+                    }
+                    try { codec.releaseOutputBuffer(idx, false) } catch (_: Throwable) {}
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+                }
+                else -> return
+            }
         }
     }
 
