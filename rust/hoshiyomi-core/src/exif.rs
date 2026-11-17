@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn builds_and_parses_ascii_and_short() {
         let tags = vec![
-            WriteTag::ascii(tags::MAKE, "ProjectTCAM"),
+            WriteTag::ascii(tags::MAKE, "HoshiyomiCamera"),
             WriteTag::ascii(tags::MODEL, "X6739"),
             WriteTag::short(tags::ORIENTATION, 6),
         ];
@@ -351,7 +351,7 @@ mod tests {
         let jpeg = synthetic(&app1);
         let entries = parse(&jpeg).unwrap();
         let by_tag = |t: u16| entries.iter().find(|e| e.tag == t).unwrap();
-        assert_eq!(by_tag(tags::MAKE).string.as_deref(), Some("ProjectTCAM"));
+        assert_eq!(by_tag(tags::MAKE).string.as_deref(), Some("HoshiyomiCamera"));
         assert_eq!(by_tag(tags::MODEL).string.as_deref(), Some("X6739"));
         assert_eq!(by_tag(tags::ORIENTATION).value, Some(6));
         assert_eq!(by_tag(tags::ORIENTATION).orientation_degrees(), Some(90));

@@ -1,7 +1,7 @@
-# Stargazer Camera
+# HoshiyomiCamera
 
-External name: **Stargazer Camera** (short: **Stargazer**). Internal codename:
-**HoshiyomiCam**. A from-scratch rebuild of the Transsion stock camera experience
+**HoshiyomiCamera** (formerly ProjectTCAM; display name **Stargazer Camera**, short
+**Stargazer**). A from-scratch rebuild of the Transsion stock camera experience
 (`com.transsion.camera` v12.0.01.001, reverse-engineered from `TCam/TCAM.apk`), written in
 Kotlin + Jetpack Compose + Material 3, with every native compute library re-implemented in
 Rust.

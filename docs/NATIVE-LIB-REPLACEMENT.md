@@ -1,4 +1,4 @@
-# Native library replacement matrix — TCAM.apk → ProjectTCAM
+# Native library replacement matrix — TCAM.apk → HoshiyomiCamera
 
 This document closes the "are all required TCAM native libs actually replaced by standalone
 Rust-backed functionality?" question with artifact-level evidence. It is derived from the
@@ -12,7 +12,7 @@ $ unzip -l TCam/TCAM.apk | grep -oE 'lib/arm64-v8a/lib[^ ]+\.so' | sort -u
 # 37 libraries (full list in the table below)
 ```
 
-Native libraries actually bundled in ProjectTCAM:
+Native libraries actually bundled in HoshiyomiCamera:
 ```bash
 $ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -oE 'lib/[^ ]+\.so' | sort -u
 lib/{arm64-v8a,armeabi-v7a,x86_64}/libhoshiyomi_core.so        <- single Rust core
@@ -40,7 +40,7 @@ $ grep -oE 'external fun [A-Za-z0-9_]+' app/.../native/NativeCore.kt | sort -u  
 
 ## Full 37-library disposition
 
-| # | TCAM `.so` (shipped) | Disposition in ProjectTCAM | Rust module / platform API | JNI entry points | Evidence |
+| # | TCAM `.so` (shipped) | Disposition in HoshiyomiCamera | Rust module / platform API | JNI entry points | Evidence |
 |---|---|---|---|---|---|
 | 1 | `libyuvutil.so` | **Replaced (Rust)** | `yuv.rs` (13 tests) | `yuv420ToRgba`, `rgbaToNv21`, `nv21ToRgba`, `rotate`, `mirror`, `scale`, `crop` | JNI + tests + app call sites |
 | 2 | `libzbar.so` | **Replaced (Rust)** | `barcode.rs` (7 tests) | `decodeQr` | QR decode; scanner mode wired |
@@ -75,7 +75,7 @@ $ grep -oE 'external fun [A-Za-z0-9_]+' app/.../native/NativeCore.kt | sort -u  
 ## Verdict
 
 **Every native library that implements a camera-core imaging/processing function in TCAM has a
-standalone Rust (or platform-API) replacement in ProjectTCAM, exposed behind a single
+standalone Rust (or platform-API) replacement in HoshiyomiCamera, exposed behind a single
 `libhoshiyomi_core.so`, with unit-test and on-device evidence.** No prebuilt TCAM/vendor imaging
 library is bundled. ARCore remains an allowed platform/Play-Services component.
 

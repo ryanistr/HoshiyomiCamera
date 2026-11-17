@@ -1,6 +1,6 @@
-# ProjectTCAM — TCAM Parity & On-Device Verification Matrix
+# HoshiyomiCamera — TCAM Parity & On-Device Verification Matrix
 
-Target: X6739 (serial `102562537K104189`, MTK MT6893 D8050), USB, 2026-11-15. App: `com.hoshiyomi.camera` (Stargazer Camera / ProjectTCAM), repo https://github.com/ryanistr/ProjectTCAM (`main`).
+Target: X6739 (serial `102562537K104189`, MTK MT6893 D8050), USB, 2026-11-15. App: `com.hoshiyomi.camera` (Stargazer Camera / HoshiyomiCamera), repo https://github.com/ryanistr/HoshiyomiCamera (`main`).
 
 Build/test baseline (this wave): `cargo test --manifest-path rust/hoshiyomi-core/Cargo.toml --no-default-features --lib` → **73 passed, 0 failed**. `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (multiple iterations), latest debug APK installed to X6739 and revalidated.
 
@@ -88,5 +88,5 @@ Back modes (registry): movie, video, asd, makeup, portrait, supernight, supernig
 
 ## 6. Repo / reproducibility
 
-- Source: Kotlin/Compose app + `rust/hoshiyomi-core` (Rust cdylib). Published at https://github.com/ryanistr/ProjectTCAM. `.gitignore` excludes build/target/jniLibs; Kotlin sources tracked.
+- Source: Kotlin/Compose app + `rust/hoshiyomi-core` (Rust cdylib). Published at https://github.com/ryanistr/HoshiyomiCamera. `.gitignore` excludes build/target/jniLibs; Kotlin sources tracked.
 - Native policy: imaging/compute in Rust `libhoshiyomi_core.so`; no prebuilt vendor imaging libs bundled. ARCore consumed as installed platform service.

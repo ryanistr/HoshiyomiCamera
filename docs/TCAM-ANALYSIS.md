@@ -42,7 +42,7 @@ ones — `WRITE_MEDIA_STORAGE`, `MANAGE_EXTERNAL_STORAGE`, `WRITE_SECURE_SETTING
 ## 2. Native library inventory (37 .so, 197.2 MB)
 
 All `arm64-v8a` only. This is the layer the objective targets: these are the prebuilt
-libraries ProjectTCAM replaces with Rust.
+libraries HoshiyomiCamera replaces with Rust.
 
 | Native lib | Size | Java package binding | Function |
 |---|---|---|---|
@@ -253,7 +253,7 @@ Top asset folders: `bemakeup` (357 files — makeup materials), `themecapture` (
 
 ---
 
-## 6. Modularity summary — the recipe ProjectTCAM must reproduce
+## 6. Modularity summary — the recipe HoshiyomiCamera must reproduce
 
 1. **Platform abstraction interface** over Camera2 (`IPlatformCamera2`, 307 methods) so the
    feature layer never touches `CameraDevice`/`CaptureRequest` directly.
@@ -269,7 +269,7 @@ Top asset folders: `bemakeup` (357 files — makeup materials), `themecapture` (
    JPEG/YUV capture and YUV preview paths.
 6. **System-property + resource-overlay device branching** for OEM hardware (foldables,
    VIP selfie, lifter, vibrator).
-7. **Native algorithm libraries behind per-feature JNI wrappers** — the layer ProjectTCAM
+7. **Native algorithm libraries behind per-feature JNI wrappers** — the layer HoshiyomiCamera
    rewrites in Rust.
 
 ---
@@ -524,8 +524,8 @@ The AR mode is surfaced only when `com.google.ar.core` is installed (the origina
 
 ## 17. GitHub repository
 
-The ProjectTCAM source (Kotlin app + Rust core + vendor analysis) is published at
-https://github.com/ryanistr/ProjectTCAM (ryanistr). 
+The HoshiyomiCamera source (Kotlin app + Rust core + vendor analysis) is published at
+https://github.com/ryanistr/HoshiyomiCamera (ryanistr). 
 
 Repo contents and policy:
 - `app/src/main/kotlin/` — the App/Kotlin layer (18 sources: UI, platform, AR, mode, native)
