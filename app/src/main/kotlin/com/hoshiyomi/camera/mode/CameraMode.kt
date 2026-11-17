@@ -93,16 +93,6 @@ object ModeRegistry {
         override fun settings() = portrait.settings()
     }
 
-    /** AR Space (the reference camera app `ARCoreModeEntry`, titled "AR Space" when its entrance is
-     *  enabled): ARCore owns the camera for this mode and the Compose chrome
-     *  layers on top. Surfaced only where Google Play Services for AR is
-     *  installed — the CameraScreen filters on availability. */
-    val arspace = object : CameraMode {
-        override val id = "arspace"
-        override val title = "AR Space"
-        override val isVideo = false
-    }
-
     val pro = object : CameraMode {
         override val id = "professional"
         override val title = "Pro"
@@ -129,7 +119,7 @@ object ModeRegistry {
 
     // ---- capture-profile preset modes (the reference camera app: MacroModeEntry,
     // HighDefinitionModeEntry, SuperNightEntry, SuperNightFilterModeEntry,
-    // SuperMoonModeEntry, MagicSkyModeEntry, ASDModeEntry, SdofPhotoEntry) ----
+    // SuperMoonModeEntry, ASDModeEntry, SdofPhotoEntry) ----
     val macro = object : CameraMode {
         override val id = "macro" ; override val title = "Macro" ; override val isVideo = false
     }
@@ -145,9 +135,6 @@ object ModeRegistry {
     val supermoon = object : CameraMode {
         override val id = "supermoon" ; override val title = "Super Moon" ; override val isVideo = false
     }
-    val magicsky = object : CameraMode {
-        override val id = "magicsky" ; override val title = "Magic Sky" ; override val isVideo = false
-    }
     val asd = object : CameraMode {
         override val id = "asd" ; override val title = "Auto Scene" ; override val isVideo = false
     }
@@ -160,17 +147,6 @@ object ModeRegistry {
     val timelapse = object : CameraMode {
         override val id = "timelapse" ; override val title = "Time-Lapse" ; override val isVideo = false
     }
-    val dualvideo = object : CameraMode {
-        override val id = "dualvideo" ; override val title = "Dual Video" ; override val isVideo = true
-    }
-    val movie = object : CameraMode {
-        override val id = "movie" ; override val title = "Movie" ; override val isVideo = true
-        override fun settings() = listOf(ModeSetting("quality", "Quality", listOf("1080p", "4K")))
-    }
-    val funvideo = object : CameraMode {
-        override val id = "funvideo" ; override val title = "Fun Video" ; override val isVideo = true
-    }
-
     // ---- capture-flow modes (the reference camera app: BurstPMKModeEntry, DocumentEntry) ----
     val burstpmk = object : CameraMode {
         override val id = "burstpmk" ; override val title = "Burst" ; override val isVideo = false
@@ -187,15 +163,14 @@ object ModeRegistry {
      * AR subsystem.
      */
     val backModes: List<CameraMode> = listOf(
-        movie, video, asd, makeup, portrait, supernight, supernightfilter, supermoon,
-        highdefinition, panorama, funvideo, pro, slowmotion, dualvideo, burstpmk, macro,
-        document, timelapse, magicsky, arspace, barcode
+        video, asd, makeup, portrait, supernight, supernightfilter, supermoon,
+        highdefinition, panorama, pro, slowmotion, burstpmk, macro,
+        document, timelapse, barcode
     )
-    /** Front camera order — the original's 12-entry list plus the modes our
-     *  capture flows implement (WideSelfie rides the panorama pipeline). */
+    /** Front camera order — the original's list minus the excluded gimmick modes. */
     val frontModes: List<CameraMode> = listOf(
-        movie, video, asd, makeup, portrait, stblur, supernight, panorama, funvideo,
-        slowmotion, dualvideo, wideselfie, timelapse, barcode
+        video, asd, makeup, portrait, stblur, supernight, panorama,
+        slowmotion, wideselfie, timelapse, barcode
     )
 
     fun modesFor(facingFront: Boolean): List<CameraMode> =

@@ -7,7 +7,7 @@ import android.hardware.camera2.CaptureRequest
 /**
  * Capture-parameter presets — the Stargazer counterpart of the reference camera app's per-mode
  * `captureParams` (MacroModeEntry / HighDefinitionModeEntry / SuperNightEntry /
- * SuperMoonRestriction / MagicSkyEntry / ASDModeEntry / SdofPhotoEntry). Each
+ * SuperMoonRestriction  / ASDModeEntry / SdofPhotoEntry). Each
  * profile maps mode intent onto standard Camera2 controls plus the probed
  * vendor extension keys from [VendorKeys]; keys the HAL lacks stay no-ops, so
  * every mode degrades gracefully on unsupported silicon.
@@ -98,7 +98,6 @@ sealed class CaptureProfile {
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, -3)
             builder.set(CaptureRequest.SENSOR_SENSITIVITY, 100)
-            VendorKeys.Tran.magicSkyMode.apply(builder, 0) // neutral scene flags
         }
         /** Zoom ratio: optical max, plus half of the digital range. */
         fun zoomRatio(info: CameraCharacteristics): Float {
@@ -109,18 +108,6 @@ sealed class CaptureProfile {
             val opticalZoom = if (optical > 0f) optical / 4.5f else zoom?.upper ?: 1f
             val max = (opticalZoom * 1.0f) + (zoom?.let { (it.upper - it.lower) * 0.3f } ?: 0f)
             return max.coerceIn(1f, zoom?.upper ?: max.coerceAtLeast(1f))
-        }
-    }
-
-    /** Magic Sky: vendor magic-sky scene + saturation boost. */
-    class MagicSky : CaptureProfile() {
-        override val label = "Magic Sky"
-        override fun applyPreview(builder: CaptureRequest.Builder, info: CameraCharacteristics) {
-            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_AUTO)
-            VendorKeys.Tran.magicSkyMode.apply(builder, 1)
-        }
-        override fun applyCapture(builder: CaptureRequest.Builder, info: CameraCharacteristics) {
-            applyPreview(builder, info)
         }
     }
 
@@ -152,7 +139,6 @@ sealed class CaptureProfile {
             "supernight" -> SuperNight()
             "supernightfilter" -> SuperNightFilter()
             "supermoon" -> SuperMoon()
-            "magicsky" -> MagicSky()
             "asd" -> ASD()
             "slowmotion" -> SlowMotion()
             else -> Photo

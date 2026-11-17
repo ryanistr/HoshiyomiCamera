@@ -133,10 +133,6 @@ dependencies {
     // itself speaks android.hardware.camera2 directly, matching TCAM's vendor-key design.
     implementation(libs.camera.lifecycle)
     implementation(libs.exifinterface)
-    // ARCore for the AR mode — a platform component (Google Play Services for
-    // AR, already installed on the device), not a vendor prebuilt: it provides
-    // the world/face tracking; our Compose layer renders the chrome.
-    implementation("com.google.ar:core:1.42.0")
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
 }

@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.view.TextureView
-import com.hoshiyomi.camera.ar.ArScreen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -151,12 +150,7 @@ fun CameraScreen(
             return@Box
         }
 
-        // AR mode: ARCore owns the camera, so the Camera2 viewfinder is
-        // replaced by an ARCore GL surface (the reference camera app does the same with its
-        // GLSurfaceViewBackgroundController for ARCoreModeEntry).
-        if (state.activeMode.id == "arspace") {
-            ArScreen()
-        } else {
+        // AR mode removed by user decision — Camera2 viewfinder always shown.
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             val ratio = remember(state.activeMode.id, state.facingFront, state.ready) {
                 viewModel.previewDisplayRatio()
@@ -188,7 +182,6 @@ fun CameraScreen(
                 },
                 modifier = Modifier.fillMaxWidth().aspectRatio(ratio)
             )
-        }
         }
 
         // Top chrome + filter picker, stacked clear of the status bar: the
@@ -225,7 +218,7 @@ fun CameraScreen(
             FaceHud(faces = state.faces)
         }
 
-        // Scene hint from vendor ASD/MagicSky/Night result keys.
+        // Scene hint from vendor ASD/Night result keys.
         state.sceneHint?.let { hint ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Surface(

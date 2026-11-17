@@ -2,6 +2,8 @@
 
 Target: X6739 (serial `102562537K104189`, MTK MT6893 D8050), USB, 2026-11-15. App: `com.hoshiyomi.camera` (Stargazer Camera / HoshiyomiCamera), repo https://github.com/ryanistr/HoshiyomiCamera (`main`).
 
+> **Feature removals (user decision, 2026-11-17):** AR Space/ARCore, Dual Video, Movie, Fun Video and Magic Sky are **deliberately removed from the app** (mode registry, UI, AR classes/dependency, dual-recorder plumbing, magic-sky vendor key). They are gimmicks the user does not want ported. Historical rows below that mention them are retained only as a record of earlier verification runs — those modes no longer exist in the shipped app. Do not re-add them.
+
 Build/test baseline (this wave): `cargo test --manifest-path rust/hoshiyomi-core/Cargo.toml --no-default-features --lib` → **73 passed, 0 failed**. `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (multiple iterations), latest debug APK installed to X6739 and revalidated.
 
 Evidence sources: `adb logcat` (filtered by `CameraVM|PlatformCamera|selectMode|camera ready|saved|night stack|document saved|panorama saved|capture post-processed|video saved|companion video saved|intent review`), `adb shell ls -lt /sdcard/DCIM/Stargazer`, MediaStore video queries, and prior recorded verification in `docs/TCAM-ANALYSIS.md` (§12–§19).

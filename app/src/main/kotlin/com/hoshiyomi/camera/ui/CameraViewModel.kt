@@ -49,7 +49,7 @@ data class CameraUiState(
     val filterPreview: android.graphics.Bitmap? = null,
     /** Active color-filter style name, when live preview filtering is on. */
     val filterStyle: String? = null,
-    /** Scene hint driven by vendor CaptureResult keys (ASD/MagicSky/Night). */
+    /** Scene hint driven by vendor CaptureResult keys (ASD/Night). */
     val sceneHint: String? = null,
     /** Panorama frames captured / total, for the live pan guide. */
     val panoProgress: Int = 0,
@@ -97,18 +97,10 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private fun targetRatioForMode(mode: com.hoshiyomi.camera.mode.CameraMode): Double =
         if (mode.isVideo) 16.0 / 9.0 else camera.pictureAspectRatio()
 
-    /** Google Play Services for AR is the AR mode's platform component; the
-     *  chip surfaces only where it is installed (the original gates AR the
-     *  same way via its resource flags). */
-    private val arAvailable: Boolean = runCatching {
-        app.packageManager.getPackageInfo("com.google.ar.core", 0)
-        true
-    }.getOrDefault(false)
-
+    // AR Space / ARCore excluded by user decision — no AR mode or gating.
     private fun refreshModes() {
         _state.update {
-            it.copy(modes = ModeRegistry.modesFor(it.facingFront)
-                .filter { m -> m.id != "arspace" || arAvailable })
+            it.copy(modes = ModeRegistry.modesFor(it.facingFront))
         }
     }
 
@@ -632,14 +624,6 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         characteristicsInfo()?.let { info ->
             camera.setCaptureProfile(com.hoshiyomi.camera.platform.CaptureProfile.forMode(id, info))
         }
-        if (id == "arspace") {
-            // ARCore owns the camera for this mode: hand it over now so its
-            // session opens cleanly. Leaving the mode rebuilds the Camera2
-            // session through the viewfinder's attach path.
-            camera.release()
-            _state.update { it.copy(ready = false) }
-            return
-        }
         // Front-only modes (the original's WideSelfie / STBlur): switch to the
         // front sensor when selected from the back camera. flipCamera reopens
         // with the profile and ratio already applied above.
@@ -703,6 +687,10 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var recorder: com.hoshiyomi.camera.platform.VideoRecorder? = null
+
+    private fun stopRecording() {
+        recorder?.stop()
+    }
 
     fun onShutter() {
         val s = state.value
@@ -963,76 +951,31 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private fun startRecording(s: CameraUiState = state.value) {
         val app = getApplication<Application>()
         val modeId = s.activeMode.id
-        // The MP4 is assembled in cache, then handed to MediaStore.
         val file = java.io.File(app.cacheDir, displayName(modeId) + ".mp4")
         val quality = videoSettingValue(s, "quality") ?: "1080p"
         val fps = if (modeId == "slowmotion") SLOW_MOTION_FPS else 30
-        // DualVideo runs two encoders off one session: a main 1080p stream
-        // plus a low-bitrate companion — the dual-surface capture the
-        // original's `DualVideoModeEntry` builds on.
-        val isDual = modeId == "dualvideo"
         val rec = com.hoshiyomi.camera.platform.VideoRecorder.create(
             file, quality, frameRate = fps, withAudio = true
         )
         recorder = rec
 
-        // Dual-video coordination: both recorders must finish before we restore
-        // the preview session and clear recording state, otherwise the companion
-        // stream can be truncated.
-        val dualExpected = java.util.concurrent.atomic.AtomicInteger(if (isDual) 2 else 1)
-        val dualDone = java.util.concurrent.atomic.AtomicInteger(0)
-        var mainSaved: java.io.File? = null
-        var companionSaved: java.io.File? = null
-        fun maybeFinishDual(intentMode: Boolean) {
-            if (dualDone.incrementAndGet() < dualExpected.get()) return
+        fun finish(intentMode: Boolean, saved: java.io.File?) {
             viewModelScope.launch(Dispatchers.IO) {
                 if (intentMode) {
-                    val target = mainSaved ?: companionSaved
-                    val result = if (target != null) {
-                        runCatching { attachIntentVideo(target) }
+                    val result = if (saved != null) {
+                        runCatching { attachIntentVideo(saved) }
                             .getOrElse { Log.e(TAG, "intent video attach failed", it); IntentResult(false) }
                     } else IntentResult(false)
                     _state.update { it.copy(isIntentMode = false, isRecording = false) }
                     _intentResults.emit(result)
                 } else {
-                    // Prepare companion (or fallback) before saving main because
-                    // MediaSaver.saveVideo deletes the source cache file.
-                    var companionToSave = companionSaved
-                    val needsCompanionFallback = modeId == "dualvideo" &&
-                        (companionToSave == null || runCatching { companionToSave!!.length() }.getOrDefault(0L) <= 0L)
-                    if (needsCompanionFallback && mainSaved != null) {
-                        try {
-                            val fallback = java.io.File(app.cacheDir, displayName("dualvideo") + "_companion_fallback.mp4")
-                            mainSaved!!.copyTo(fallback, overwrite = true)
-                            if (fallback.length() > 0L) {
-                                Log.w(TAG, "companion unavailable; using main-derived fallback: ${fallback.length()} bytes")
-                                companionToSave = fallback
-                            } else {
-                                runCatching { fallback.delete() }
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "companion fallback copy failed", t)
-                        }
-                    }
-
-                    mainSaved?.let { f ->
+                    saved?.let { f ->
                         val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
                         Log.d(TAG, "video saved: $uri")
-                    }
-                    companionToSave?.let { f ->
-                        val len = runCatching { f.length() }.getOrDefault(0L)
-                        if (len > 0L) {
-                            val uri = runCatching { mediaSaver.saveVideo(f) }.getOrNull()
-                            Log.d(TAG, "companion video saved: $uri bytes=$len path=${f.name}")
-                        } else {
-                            Log.w(TAG, "companion video empty, skipping save: ${f.absolutePath}")
-                            runCatching { f.delete() }
-                        }
                     }
                     _state.update { it.copy(isRecording = false) }
                 }
                 recorder = null
-                companionRecorder = null
                 if (!intentMode) {
                     withContext(Dispatchers.Main) { camera.restorePreviewSession() }
                 }
@@ -1044,196 +987,37 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
                 val surface = recorder?.inputSurface
                 if (surface == null) {
                     _state.update { it.copy(isRecording = false) }
-                    dualExpected.set(0)
                     return
                 }
-                if (!isDual) {
-                    camera.beginVideoRecording(
-                        surface,
-                        onError = { t ->
-                            Log.e(TAG, "video session failed", t)
-                            recorder?.stop()
-                            recorder = null
-                            _state.update { it.copy(isRecording = false) }
-                        }
-                    )
-                } else {
-                    // Try dual-surface recording first (true simultaneous
-                    // encoder targets). If the HAL rejects the stream
-                    // combination, fall back to main-only recording and persist
-                    // a valid companion artifact from the main output.
-                    val companionFile = java.io.File(app.cacheDir, displayName("dualvideo") + "_companion.mp4")
-                    val comp = com.hoshiyomi.camera.platform.VideoRecorder.create(
-                        companionFile,
-                        com.hoshiyomi.camera.platform.VideoRecorder.QUALITY_480P,
-                        frameRate = fps, withAudio = false
-                    )
-                    val companionActive = java.util.concurrent.atomic.AtomicBoolean(true)
-                    companionRecorder = comp
-                    comp.start(object : com.hoshiyomi.camera.platform.VideoRecorder.Listener {
-                        override fun onStarted() {
-                            val compSurface = companionRecorder?.inputSurface
-                            if (compSurface == null) {
-                                Log.w(TAG, "companion surface unavailable, recording main-only dual fallback")
-                                companionActive.set(false)
-                                dualExpected.set(1)
-                                runCatching { companionRecorder?.stop() }
-                                companionRecorder = null
-                                camera.beginVideoRecording(
-                                    surface,
-                                    onError = { t ->
-                                        Log.e(TAG, "dual(main-only) video session failed", t)
-                                        recorder?.stop()
-                                        recorder = null
-                                        _state.update { it.copy(isRecording = false) }
-                                        dualExpected.set(0)
-                                    }
-                                )
-                                return
-                            }
-                            camera.beginVideoRecording(
-                                surface, compSurface,
-                                onError = { t ->
-                                    Log.w(TAG, "dual-surface session rejected, fallback to main-only: ${t.message}")
-                                    // Drop companion stream on this HAL and continue
-                                    // with main-only recording + persisted fallback copy.
-                                    companionActive.set(false)
-                                    dualExpected.set(1)
-                                    companionSaved = null
-                                    runCatching { companionRecorder?.stop() }
-                                    companionRecorder = null
-                                    // Small delay not required; reconfigure to single
-                                    // recorder target including analysis.
-                                    camera.beginVideoRecording(
-                                        surface,
-                                        onError = { t2 ->
-                                            Log.e(TAG, "dual fallback video session failed", t2)
-                                            recorder?.stop()
-                                            recorder = null
-                                            _state.update { it.copy(isRecording = false) }
-                                            dualExpected.set(0)
-                                        }
-                                    )
-                                }
-                            )
-                        }
-                        override fun onFinished(savedFile: java.io.File) {
-                            if (!companionActive.get()) {
-                                runCatching { if (savedFile.exists() && savedFile.length() <= 4096L) savedFile.delete() }
-                                return
-                            }
-                            val len = runCatching { savedFile.length() }.getOrDefault(0L)
-                            Log.d(TAG, "companion recorder finished: ${savedFile.name} bytes=$len")
-                            companionSaved = if (len > 0L) savedFile else null
-                            val intentMode = _state.value.isIntentMode
-                            maybeFinishDual(intentMode)
-                        }
-                        override fun onError(throwable: Throwable) {
-                            if (!companionActive.get()) return
-                            Log.e(TAG, "companion recorder error", throwable)
-                            companionSaved = null
-                            val intentMode = _state.value.isIntentMode
-                            maybeFinishDual(intentMode)
-                        }
-                    })
-                }
+                camera.beginVideoRecording(
+                    surface,
+                    onError = { t ->
+                        Log.e(TAG, "video session failed", t)
+                        recorder?.stop()
+                        recorder = null
+                        _state.update { it.copy(isRecording = false) }
+                    }
+                )
                 _state.update { it.copy(isRecording = true) }
             }
 
             override fun onFinished(savedFile: java.io.File) {
-                mainSaved = savedFile
-                val intentMode = _state.value.isIntentMode
-                maybeFinishDual(intentMode)
+                finish(_state.value.isIntentMode, savedFile)
             }
 
             override fun onError(throwable: Throwable) {
                 Log.e(TAG, "recorder error", throwable)
                 val intentMode = _state.value.isIntentMode
-                mainSaved = null
-                // For dual, let companion finish/error too if it was started.
-                if (dualExpected.get() <= 1) {
-                    recorder = null
-                    companionRecorder?.stop()
-                    companionRecorder = null
-                    if (intentMode) {
-                        _state.update { it.copy(isIntentMode = false, isRecording = false) }
-                        viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
-                    } else {
-                        _state.update { it.copy(isRecording = false) }
-                        viewModelScope.launch(Dispatchers.Main) { camera.restorePreviewSession() }
-                    }
+                recorder = null
+                if (intentMode) {
+                    _state.update { it.copy(isIntentMode = false, isRecording = false) }
+                    viewModelScope.launch { _intentResults.emit(IntentResult(false)) }
                 } else {
-                    recorder = null
-                    companionRecorder?.stop()
-                    maybeFinishDual(intentMode)
+                    _state.update { it.copy(isRecording = false) }
+                    viewModelScope.launch(Dispatchers.Main) { camera.restorePreviewSession() }
                 }
             }
         })
-    }
-
-    private var companionRecorder: com.hoshiyomi.camera.platform.VideoRecorder? = null
-    @Volatile private var companionFeedCb: ((ByteArray, Int, Int) -> Unit)? = null
-    @Volatile private var companionFeedEnabled: Boolean = false
-
-    private fun startCompanionFeed(
-        recorder: com.hoshiyomi.camera.platform.VideoRecorder,
-        fps: Int
-    ) {
-        val targetW = 854
-        val targetH = 480
-        val minIntervalNs = 1_000_000_000L / fps.coerceAtLeast(1)
-        var lastNs = 0L
-        var scaledRgba = ByteArray(targetW * targetH * 4)
-        var nv21 = ByteArray(targetW * targetH * 3 / 2)
-        val cb: (ByteArray, Int, Int) -> Unit = cb@{ rgba, w, h ->
-            if (!companionFeedEnabled) return@cb
-            val now = System.nanoTime()
-            if (now - lastNs < minIntervalNs) return@cb
-            lastNs = now
-            try {
-                // Scale analysis RGBA (typically 640x480) to companion encoder
-                // size and convert to NV21 for buffer-input encoding.
-                if (scaledRgba.size != targetW * targetH * 4) scaledRgba = ByteArray(targetW * targetH * 4)
-                if (nv21.size != targetW * targetH * 3 / 2) nv21 = ByteArray(targetW * targetH * 3 / 2)
-                val src = if (w == targetW && h == targetH) {
-                    rgba
-                } else {
-                    NativeCore.scale(rgba, w, h, 4, targetW, targetH, scaledRgba)
-                    scaledRgba
-                }
-                NativeCore.rgbaToNv21(targetW, targetH, src, nv21)
-                recorder.queueNv12Frame(nv21.copyOf(), now / 1000)
-            } catch (t: Throwable) {
-                Log.w(TAG, "companion feed frame failed", t)
-            }
-        }
-        companionFeedCb = cb
-        companionFeedEnabled = true
-        // Piggyback on the always-on analysis/filter pipeline (RGBA path).
-        camera.addFilterCallback(cb)
-        camera.enableFilterPreview(true)
-    }
-
-    private fun stopCompanionFeed() {
-        val cb = companionFeedCb
-        companionFeedCb = null
-        companionFeedEnabled = false
-        if (cb != null) {
-            camera.removeFilterCallback(cb)
-        }
-        // Keep filter preview enabled if UI filter or other consumers need it.
-        if (state.value.filterStyle != null) {
-            camera.enableFilterPreview(true)
-        } else {
-            // leave as-is; filter path is lightweight-gated and may be used by
-            // scene/preview consumers, but avoid forcing off other active uses.
-        }
-    }
-
-    private fun stopRecording() {
-        stopCompanionFeed()
-        recorder?.stop()
-        companionRecorder?.stop()
     }
 
     private fun videoSettingValue(s: CameraUiState, key: String): String? {
@@ -1542,7 +1326,6 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         camera.removeFilterCallback(filterCallback)
         camera.removeSceneCallback(sceneCallback)
         runCatching { recorder?.stop() }
-        runCatching { companionRecorder?.stop() }
         camera.release()
         super.onCleared()
     }

@@ -127,7 +127,6 @@ object VendorKeys {
         val filterId = RequestKey("com.transsion.filterid", Int::class.java)
         val nightMode = RequestKey("com.transsion.nightMode", Int::class.java)
         val screenFlashMode = RequestKey("com.transsion.screenflashmode", Int::class.java)
-        val magicSkyMode = RequestKey("com.transsion.magicskymode", Int::class.java)
         // the reference camera app's TranssionCameraMode / CamMode settings both land on this int[]:
         // CamMode → setAppModeId(value), TranssionCameraMode → 0/1 toggle.
         val transsionCameraMode = RequestKey("com.transsion.transsioncameramode", IntArray::class.java)

@@ -640,7 +640,7 @@ class PlatformCamera(private val context: Context) {
 
     private val sceneCallbacks = ConcurrentLinkedQueue<(SceneFlags) -> Unit>()
 
-    /** Subscribe to vendor scene-flag updates (ASD / MagicSky / night). */
+    /** Subscribe to vendor scene-flag updates (ASD / night). */
     fun addSceneCallback(cb: (SceneFlags) -> Unit) {
         sceneCallbacks.add(cb)
     }
