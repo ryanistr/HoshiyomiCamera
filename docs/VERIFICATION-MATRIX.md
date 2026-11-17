@@ -90,3 +90,5 @@ Back modes (registry): movie, video, asd, makeup, portrait, supernight, supernig
 
 - Source: Kotlin/Compose app + `rust/hoshiyomi-core` (Rust cdylib). Published at https://github.com/ryanistr/HoshiyomiCamera. `.gitignore` excludes build/target/jniLibs; Kotlin sources tracked.
 - Native policy: imaging/compute in Rust `libhoshiyomi_core.so`; no prebuilt vendor imaging libs bundled. ARCore consumed as installed platform service.
+
+- **On-device revalidation (rebranded build, 2026-11-17, X6739):** latest rebranded `HoshiyomiCamera` build installed (`Success`); JNI load of `libhoshiyomi_core.so` confirmed (capture `capture post-processed: faces=3`, saved `content://.../3178`, `Stargazer_photo_1794906854840.jpg` 2,054,870 B valid `ffd8`+Exif APP1). Back-camera default + front-only restore verified: `camera ready facing=0` (back) → `selectMode(wideselfie)` → `camera ready facing=1` (front) → `selectMode(photo): restoring back camera after front-only mode` → `camera ready facing=0`. Fix: per-open-cycle ERROR_CAMERA_DEVICE(3) retry (one retry per fresh open, so later flips recover).

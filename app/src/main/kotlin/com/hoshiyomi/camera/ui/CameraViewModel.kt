@@ -505,8 +505,13 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
      *  ERROR_CAMERA_DEVICE retry all land on the same session plumbing. */
     private fun openCamera(
         texture: android.graphics.SurfaceTexture,
-        viewSize: android.util.Size
+        viewSize: android.util.Size,
+        isRetry: Boolean = false
     ) {
+        // Each *fresh* open cycle gets its own single retry — the uid-grace
+        // ERROR_CAMERA_DEVICE(3) can recur on every flip, so the previous
+        // one-shot-per-process flag left later flips unrecoverable.
+        if (!isRetry) retryUsed = false
         openInFlight = true
         camera.setPreviewTargetRatio(targetRatioForMode(state.value.activeMode))
         // Still size follows the viewfinder's ratio so the framing seen is the
@@ -557,7 +562,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             delay(1200)
             if (resumed && previewTexture != null && !state.value.ready) {
-                openCamera(previewTexture!!, previewViewSize)
+                openCamera(previewTexture!!, previewViewSize, isRetry = true)
             }
         }
     }
