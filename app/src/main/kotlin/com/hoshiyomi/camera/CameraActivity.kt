@@ -14,7 +14,7 @@ class CameraActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { StargazerTheme { CameraRoute() } }
+        setContent { StargazerTheme { CameraRoute(onOpenScanner = { viewModel.selectMode("barcode") }) } }
         // Route the OEM deep-link action that the original app exposes from
         // launcher shortcuts: START_SPECIFY_MODE with a mode id jumps straight
         // into that mode.
@@ -53,9 +53,9 @@ class CameraActivity : ComponentActivity() {
 }
 
 @Composable
-private fun CameraRoute() {
+private fun CameraRoute(onOpenScanner: () -> Unit) {
     CameraScreen(
-        onOpenScanner = { /* the scanner mode is reachable from the mode chips */ },
+        onOpenScanner = onOpenScanner,
         onOpenSettings = { /* settings sheet — see SettingsActivity */ },
         onThumbnail = { }
     )
