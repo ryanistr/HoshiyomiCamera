@@ -291,10 +291,15 @@ Top asset folders: `bemakeup` (357 files — makeup materials), `themecapture` (
 | `libil2cpp/libunity/ARCore` (AR modes) | Out of initial scope — ARCore via Compose, native not Rust |
 | Beauty/AR SDKs (FaceUnity/Nama, BEF, ArcSoft, Youtu) | JetBrains—no; these are licensed vendor SDKs. Replaced by on-device open models behind the same feature contracts (plan) |
 
-Rationale for the Rust core: single native dependency (`libtcam_core.so`), no per-vendor
+Rationale for the Rust core: single native dependency (`libhoshiomi_core.so`), no per-vendor
 prebuilts, lower memory (no per-SDK runtimes), and a single memory-safe pipeline shared by
 all modes. The vendor-SDK features (beauty, AR) keep their Java-side feature contracts so
 the modularity is preserved; their implementations are filled in progressively.
+
+**Definitive per-library disposal, JNI parity, unit-test counts and on-device evidence for all
+37 TCAM native libraries are recorded in `docs/NATIVE-LIB-REPLACEMENT.md`.** It confirms the
+built app ships only `libhoshiomi_core.so` (plus AndroidX and ARCore platform libs) and no
+TCAM/vendor imaging prebuilt.
 
 ---
 
