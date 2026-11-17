@@ -8,7 +8,7 @@ Evidence sources: `adb logcat` (filtered by `CameraVM|PlatformCamera|selectMode|
 
 ## 1. Rust-native core (no prebuilt vendor imaging libs)
 
-All imaging/processing paths are implemented in `rust/hoshiyomi-core` and exposed as a single `libhoshiomi_core.so` (JNI) packaged per-ABI (arm64-v8a/armeabi-v7a/x86_64). No prebuilt vendor `.so` shipped for effects/beauty/bokeh/night/stitch/doc/barcode. ARCore is treated as a platform/Play-Services component (installed on device) rather than a bundled prebuilt vendor imaging library.
+All imaging/processing paths are implemented in `rust/hoshiyomi-core` and exposed as a single `libhoshiyomi_core.so` (JNI) packaged per-ABI (arm64-v8a/armeabi-v7a/x86_64). No prebuilt vendor `.so` shipped for effects/beauty/bokeh/night/stitch/doc/barcode. ARCore is treated as a platform/Play-Services component (installed on device) rather than a bundled prebuilt vendor imaging library.
 
 | Capability | Rust module / JNI | Evidence |
 |---|---|---|
@@ -89,4 +89,4 @@ Back modes (registry): movie, video, asd, makeup, portrait, supernight, supernig
 ## 6. Repo / reproducibility
 
 - Source: Kotlin/Compose app + `rust/hoshiyomi-core` (Rust cdylib). Published at https://github.com/ryanistr/ProjectTCAM. `.gitignore` excludes build/target/jniLibs; Kotlin sources tracked.
-- Native policy: imaging/compute in Rust `libhoshiomi_core.so`; no prebuilt vendor imaging libs bundled. ARCore consumed as installed platform service.
+- Native policy: imaging/compute in Rust `libhoshiyomi_core.so`; no prebuilt vendor imaging libs bundled. ARCore consumed as installed platform service.

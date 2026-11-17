@@ -3,14 +3,14 @@ package com.hoshiyomi.camera.native
 import androidx.annotation.Keep
 
 /**
- * JNI surface into `libhoshiomi_core.so`.
+ * JNI surface into `libhoshiyomi_core.so`.
  *
  * One declaration per Rust entry point in `jni_bridge.rs`. Constants hold the
  * `System.loadLibrary` name so tests can assert the library is present.
  */
 @Keep
 object NativeCore {
-    const val LIB_NAME = "hoshiomi_core"
+    const val LIB_NAME = "hoshiyomi_core"
 
     fun ensureLoaded() {
         runCatching { System.loadLibrary(LIB_NAME) }

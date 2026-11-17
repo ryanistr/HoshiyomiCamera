@@ -15,7 +15,7 @@ Reverse-engineering evidence and architecture analysis: [`docs/TCAM-ANALYSIS.md`
 | View-based `BaseAppUI` (4,681 LOC) | Jetpack Compose + Material 3 |
 | `IPlatformCamera2` — 307-method Camera2 contract with 486 vendor keys | `PlatformCamera` + `VendorKeyRegistry` (same tri-state UNKNOWN/EXIST/NOT_EXIST probing) |
 | Reflective mode registry in resource string-arrays (191 features, 139 settings) | `ModeRegistry` with the same entry mechanism |
-| 37 prebuilt `.so` (197 MB) | one Rust cdylib: `libhoshiomi_core.so` |
+| 37 prebuilt `.so` (197 MB) | one Rust cdylib: `libhoshiyomi_core.so` |
 
 ## Layout
 

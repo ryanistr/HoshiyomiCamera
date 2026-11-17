@@ -55,7 +55,7 @@ val stageRust by tasks.registering(Sync::class) {
     description = "Stages compiled Rust libraries into jniLibs"
     dependsOn(buildRust)
     rustAbis.forEach { (abi, target) ->
-        from(rustDir.dir("target/$target/release/libhoshiomi_core.so")) {
+        from(rustDir.dir("target/$target/release/libhoshiyomi_core.so")) {
             into(abi)
         }
     }

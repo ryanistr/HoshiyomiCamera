@@ -291,14 +291,14 @@ Top asset folders: `bemakeup` (357 files — makeup materials), `themecapture` (
 | `libil2cpp/libunity/ARCore` (AR modes) | Out of initial scope — ARCore via Compose, native not Rust |
 | Beauty/AR SDKs (FaceUnity/Nama, BEF, ArcSoft, Youtu) | JetBrains—no; these are licensed vendor SDKs. Replaced by on-device open models behind the same feature contracts (plan) |
 
-Rationale for the Rust core: single native dependency (`libhoshiomi_core.so`), no per-vendor
+Rationale for the Rust core: single native dependency (`libhoshiyomi_core.so`), no per-vendor
 prebuilts, lower memory (no per-SDK runtimes), and a single memory-safe pipeline shared by
 all modes. The vendor-SDK features (beauty, AR) keep their Java-side feature contracts so
 the modularity is preserved; their implementations are filled in progressively.
 
 **Definitive per-library disposal, JNI parity, unit-test counts and on-device evidence for all
 37 TCAM native libraries are recorded in `docs/NATIVE-LIB-REPLACEMENT.md`.** It confirms the
-built app ships only `libhoshiomi_core.so` (plus AndroidX and ARCore platform libs) and no
+built app ships only `libhoshiyomi_core.so` (plus AndroidX and ARCore platform libs) and no
 TCAM/vendor imaging prebuilt.
 
 ---
@@ -513,7 +513,7 @@ The AR mode is surfaced only when `com.google.ar.core` is installed (the origina
 - `cargo test --manifest-path rust/hoshiyomi-core/Cargo.toml --no-default-features --lib`: **73 passed, 0 failed** (includes EXIF APP1-length regression).
 - `cargo build` (lib): 0 errors
 - `./gradlew :app:assembleDebug`: **BUILD SUCCESSFUL** (debug APK installs and runs on X6739)
-- `apk` contains `libhoshiomi_core.so` for arm64-v8a/armeabi-v7a/x86_64
+- `apk` contains `libhoshiyomi_core.so` for arm64-v8a/armeabi-v7a/x86_64
 - All modes reach `selectMode(<id>) found=true` on the X6739 (`102562537K104189`):
   photo, portrait, supernight, supernightfilter, supermoon, highdefinition,
   magazine/ASD/funvideo/pro/slowmotion/dualvideo/burstpmk/macro/document/
@@ -529,7 +529,7 @@ https://github.com/ryanistr/ProjectTCAM (ryanistr).
 
 Repo contents and policy:
 - `app/src/main/kotlin/` — the App/Kotlin layer (18 sources: UI, platform, AR, mode, native)
-- `rust/hoshiyomi-core/src/` — 10 Rust modules, single `libhoshiomi_core.so` in `app/src/main/jniLibs/` (build-generated, gitignored)
+- `rust/hoshiyomi-core/src/` — 10 Rust modules, single `libhoshiyomi_core.so` in `app/src/main/jniLibs/` (build-generated, gitignored)
 - `docs/`, `README.md` — architecture report and build notes
 - `work/` — RE evidence text files (jadx dumps/`r*dump` banned, `work/jout/` excluded at 142 MB)
 - `.gitignore` excludes `target/`, `app/build/`, `.gradle/`, `app/src/main/jniLibs/` (generated `.so`s) so no build artifact is pushed

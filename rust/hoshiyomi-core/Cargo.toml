@@ -6,7 +6,7 @@ description = "Stargazer Camera (HoshiyomiCam) native compute core — replaces 
 license = "MIT"
 
 [lib]
-name = "hoshiomi_core"
+name = "hoshiyomi_core"
 crate-type = ["cdylib", "rlib"]
 
 [features]

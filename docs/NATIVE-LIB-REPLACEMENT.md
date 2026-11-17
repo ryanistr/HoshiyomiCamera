@@ -15,7 +15,7 @@ $ unzip -l TCam/TCAM.apk | grep -oE 'lib/arm64-v8a/lib[^ ]+\.so' | sort -u
 Native libraries actually bundled in ProjectTCAM:
 ```bash
 $ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -oE 'lib/[^ ]+\.so' | sort -u
-lib/{arm64-v8a,armeabi-v7a,x86_64}/libhoshiomi_core.so        <- single Rust core
+lib/{arm64-v8a,armeabi-v7a,x86_64}/libhoshiyomi_core.so        <- single Rust core
 lib/{...}/libandroidx.graphics.path.so                        <- AndroidX platform dep
 lib/{...}/libarcore_sdk_c.so, libarcore_sdk_jni.so            <- ARCore (platform/Play-Services)
 
@@ -76,7 +76,7 @@ $ grep -oE 'external fun [A-Za-z0-9_]+' app/.../native/NativeCore.kt | sort -u  
 
 **Every native library that implements a camera-core imaging/processing function in TCAM has a
 standalone Rust (or platform-API) replacement in ProjectTCAM, exposed behind a single
-`libhoshiomi_core.so`, with unit-test and on-device evidence.** No prebuilt TCAM/vendor imaging
+`libhoshiyomi_core.so`, with unit-test and on-device evidence.** No prebuilt TCAM/vendor imaging
 library is bundled. ARCore remains an allowed platform/Play-Services component.
 
 ### Limitations (honest, not claimed as complete parity)
