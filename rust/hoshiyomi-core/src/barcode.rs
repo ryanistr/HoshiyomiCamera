@@ -1,11 +1,11 @@
-//! QR / barcode decoding — replacement for TCAM's `libzbar.so`.
+//! QR / barcode decoding — replacement for the reference camera app's `libzbar.so`.
 //!
 //! Implements a self-contained QR Model 2 decoder: adaptive binarization,
 //! 1:1:3:1:1 finder-pattern detection, format-information recovery (with BCH
 //! error correction), module sampling, mask removal, Reed-Solomon decoding
 //! over GF(256), and segments for numeric / alphanumeric / byte modes.
 
-use crate::{TcamError, TcamResult};
+use crate::{HoshiyomiError, HoshiyomiResult};
 
 // ---------------------------------------------------------------------------
 // Binarization
@@ -13,10 +13,10 @@ use crate::{TcamError, TcamResult};
 
 /// Adaptive threshold: each pixel is compared to the mean of the surrounding
 /// block. Robust to uneven lighting — the normal case for camera previews.
-pub fn binarize(width: u32, height: u32, grey: &[u8], out: &mut [u8]) -> TcamResult<()> {
+pub fn binarize(width: u32, height: u32, grey: &[u8], out: &mut [u8]) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     if grey.len() < w * h || out.len() < w * h {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     const BLOCK: usize = 16;
     for by in (0..h).step_by(BLOCK) {
@@ -369,10 +369,10 @@ fn solve_magnitudes(
 
 /// Decode RS block in place: `data || parity`, big-endian codeword order
 /// (QR layout). Corrects up to nsym/2 errors.
-fn rs_decode(codewords: &mut [u8], nsym: usize) -> TcamResult<()> {
+fn rs_decode(codewords: &mut [u8], nsym: usize) -> HoshiyomiResult<()> {
     let n = codewords.len();
     if n <= nsym {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     let synd = syndromes(codewords, nsym);
     if synd.iter().all(|&s| s == 0) {
@@ -381,16 +381,16 @@ fn rs_decode(codewords: &mut [u8], nsym: usize) -> TcamResult<()> {
     let lambda = berlekamp_massey(&synd);
     let positions = error_positions(&lambda, n);
     if positions.is_empty() || positions.len() != lambda.len() - 1 {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
-    let mags = solve_magnitudes(&synd, &positions, n).ok_or(TcamError::InvalidData)?;
+    let mags = solve_magnitudes(&synd, &positions, n).ok_or(HoshiyomiError::InvalidData)?;
     for (&pos, &mag) in positions.iter().zip(mags.iter()) {
         codewords[pos] ^= mag;
     }
     // Verify: every syndrome must now vanish.
     let check = syndromes(codewords, nsym);
     if check.iter().any(|&s| s != 0) {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     Ok(())
 }
@@ -621,7 +621,7 @@ fn char_count_bits(version: u8, mode: u8) -> usize {
 }
 
 /// Decode the payload segments out of the raw data codewords.
-fn decode_segments(data: &[u8], version: u8) -> TcamResult<String> {
+fn decode_segments(data: &[u8], version: u8) -> HoshiyomiResult<String> {
     let mut out = String::new();
     let mut br = BitReader { data, pos: 0 };
     loop {
@@ -633,7 +633,7 @@ fn decode_segments(data: &[u8], version: u8) -> TcamResult<String> {
             break;
         }
         if mode > 8 || mode == 3 || mode == 5 || mode == 6 || mode == 7 {
-            return Err(TcamError::InvalidData);
+            return Err(HoshiyomiError::InvalidData);
         }
         let count = br.read(char_count_bits(version, mode)).unwrap_or(0) as usize;
         match mode {
@@ -641,15 +641,15 @@ fn decode_segments(data: &[u8], version: u8) -> TcamResult<String> {
                 // Numeric: 3 chars per 10 bits.
                 let mut left = count;
                 while left >= 3 {
-                    let v = br.read(10).ok_or(TcamError::InvalidData)?;
+                    let v = br.read(10).ok_or(HoshiyomiError::InvalidData)?;
                     out.push_str(&format!("{:03}", v));
                     left -= 3;
                 }
                 if left == 2 {
-                    let v = br.read(7).ok_or(TcamError::InvalidData)?;
+                    let v = br.read(7).ok_or(HoshiyomiError::InvalidData)?;
                     out.push_str(&format!("{:02}", v));
                 } else if left == 1 {
-                    let v = br.read(4).ok_or(TcamError::InvalidData)?;
+                    let v = br.read(4).ok_or(HoshiyomiError::InvalidData)?;
                     out.push_str(&format!("{}", v));
                 }
             }
@@ -658,21 +658,21 @@ fn decode_segments(data: &[u8], version: u8) -> TcamResult<String> {
                 const ALPHA: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
                 let mut left = count;
                 while left >= 2 {
-                    let v = br.read(11).ok_or(TcamError::InvalidData)? as usize;
+                    let v = br.read(11).ok_or(HoshiyomiError::InvalidData)? as usize;
                     out.push(ALPHA[(v / 45) as usize] as char);
                     out.push(ALPHA[(v % 45) as usize] as char);
                     left -= 2;
                 }
                 if left == 1 {
-                    let v = br.read(6).ok_or(TcamError::InvalidData)? as usize;
+                    let v = br.read(6).ok_or(HoshiyomiError::InvalidData)? as usize;
                     out.push(ALPHA[v] as char);
                 }
             }
             4 => {
                 // Byte mode (UTF-8 assumed — JIS shift for 8-bit mode may apply).
                 let bytes: Vec<u8> = (0..count)
-                    .map(|_| br.read(8).ok_or(TcamError::InvalidData).map(|v| v as u8))
-                    .collect::<TcamResult<Vec<u8>>>()?;
+                    .map(|_| br.read(8).ok_or(HoshiyomiError::InvalidData).map(|v| v as u8))
+                    .collect::<HoshiyomiResult<Vec<u8>>>()?;
                 out.push_str(&String::from_utf8_lossy(&bytes));
             }
             8 => {
@@ -680,12 +680,12 @@ fn decode_segments(data: &[u8], version: u8) -> TcamResult<String> {
                 // lossy UTF-8 so the caller still sees content.
                 let mut i = 0;
                 let bytes: Vec<u8> = (0..count)
-                    .map(|_| br.read(8).ok_or(TcamError::InvalidData).map(|v| v as u8))
-                    .collect::<TcamResult<Vec<u8>>>()?;
+                    .map(|_| br.read(8).ok_or(HoshiyomiError::InvalidData).map(|v| v as u8))
+                    .collect::<HoshiyomiResult<Vec<u8>>>()?;
                 let _ = &mut i;
                 out.push_str(&String::from_utf8_lossy(&bytes));
             }
-            _ => return Err(TcamError::InvalidData),
+            _ => return Err(HoshiyomiError::InvalidData),
         }
     }
     Ok(out)
@@ -873,10 +873,10 @@ pub fn decode_qr(w: usize, h: usize, bits: &[u8]) -> Option<QrResult> {
 }
 
 /// Binaries the frame, then decodes. Convenience entry for the JNI bridge.
-pub fn decode_frame(width: u32, height: u32, grey: &[u8]) -> TcamResult<Option<QrResult>> {
+pub fn decode_frame(width: u32, height: u32, grey: &[u8]) -> HoshiyomiResult<Option<QrResult>> {
     let (w, h) = (width as usize, height as usize);
     if grey.len() < w * h {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let mut bits = vec![0u8; w * h];
     binarize(width, height, grey, &mut bits)?;

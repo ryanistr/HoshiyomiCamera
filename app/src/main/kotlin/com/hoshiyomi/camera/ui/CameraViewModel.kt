@@ -53,7 +53,7 @@ data class CameraUiState(
     val sceneHint: String? = null,
     /** Panorama frames captured / total, for the live pan guide. */
     val panoProgress: Int = 0,
-    /** Launched-for-result capture (TCAM IntentPhotoMode/IntentVideoMode). */
+    /** Launched-for-result capture (the reference camera app IntentPhotoMode/IntentVideoMode). */
     val isIntentMode: Boolean = false,
     /** Captured-but-not-yet-confirmed still, shown as the review image. */
     val intentReview: android.graphics.Bitmap? = null
@@ -92,7 +92,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private var previewViewSize = android.util.Size(0, 0)
     private var attached = false
 
-    /** Viewfinder aspect for [mode] — TCAM's `getTargetRatio()`: photo modes
+    /** Viewfinder aspect for [mode] — the reference camera app's `getTargetRatio()`: photo modes
      *  mirror the largest picture size, video modes the recording aspect. */
     private fun targetRatioForMode(mode: com.hoshiyomi.camera.mode.CameraMode): Double =
         if (mode.isVideo) 16.0 / 9.0 else camera.pictureAspectRatio()
@@ -298,7 +298,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     private var openInFlight = false
 
-    // ---- Intent capture contract (TCAM IntentPhotoMode / IntentASDMode /
+    // ---- Intent capture contract (the reference camera app IntentPhotoMode / IntentASDMode /
     // IntentVideoMode): CaptureActivity launches us with `output`/`return-data`;
     // the still is reviewed, then attached — written to the caller's URI,
     // forwarded to the crop flow, or returned inline as a bitmap. ----
@@ -360,7 +360,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private fun attachIntentJpeg(jpeg: ByteArray): IntentResult {
         val crop = intentCrop
         if (crop != null) {
-            // TCAM's attachToCropIntent: temp file → com.android.camera.action.CROP
+            // the reference camera app's attachToCropIntent: temp file → com.android.camera.action.CROP
             // with output or return-data (+ circleCrop); the Activity forwards it.
             val ctx = getApplication<Application>()
             val tmp = java.io.File(ctx.cacheDir, "intent_crop.jpg")
@@ -400,7 +400,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Decodes ≤ 51200 px and bakes the EXIF orientation in, like
-     *  `BitmapUtils.rotateAndMirror(..., MAX_NUMBER_PIXELS, ...)` in TCAM. */
+     *  `BitmapUtils.rotateAndMirror(..., MAX_NUMBER_PIXELS, ...)` in the reference camera app. */
     private fun inlineIntentBitmap(jpeg: ByteArray): android.graphics.Bitmap? {
         val orientation = runCatching { NativeCore.exifOrientation(jpeg) }.getOrDefault(0)
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -649,7 +649,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             autoFlippedToFront = false
             flipCamera()
         }
-        // TCAM switches the viewfinder aspect with the mode (4:3 photo family,
+        // the reference camera app switches the viewfinder aspect with the mode (4:3 photo family,
         // 16:9 video family); the buffer is sized at session-configuration
         // time, so a ratio change rebuilds the session against the same surface.
         if (state.value.ready && camera.setPreviewTargetRatio(targetRatioForMode(mode))) {

@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Camera2 engine with vendor-extension probing — the Stargazer counterpart of
- * TCAM's `PlatformCamera2Impl` (4,707 LOC) sitting behind `IPlatformCamera2`.
+ * the reference camera app's `PlatformCamera2Impl` (4,707 LOC) sitting behind `IPlatformCamera2`.
  *
  * The flow is the original's: open a [CameraDevice] for the logical camera id,
  * probe vendor keys through [VendorKeys], build one capture session over every
@@ -40,7 +40,7 @@ class PlatformCamera(private val context: Context) {
         const val JPEG_QUALITY = 100.toByte()
         const val ANALYSIS_W = 640
         const val ANALYSIS_H = 480
-        /** TCAM's dump-tolerance gate (`FeatureSupport.isDumpToleranceSupport`). */
+        /** the reference camera app's dump-tolerance gate (`FeatureSupport.isDumpToleranceSupport`). */
         const val RATIO_TOLERANCE = 0.01
         /** `CameraUtil.PICTURE_RATIO_4_3`, the original's standard fallback. */
         val RATIO_4_3 = 4.0 / 3.0
@@ -125,7 +125,7 @@ class PlatformCamera(private val context: Context) {
     }.getOrNull()
 
     /**
-     * Largest JPEG output size — the counterpart of TCAM's `KEY_PICTURE_SIZE`
+     * Largest JPEG output size — the counterpart of the reference camera app's `KEY_PICTURE_SIZE`
      * default, whose aspect the viewfinder mirrors (`getTargetRatio()`).
      */
     fun pictureSize(): Size? = characteristics()
@@ -138,7 +138,7 @@ class PlatformCamera(private val context: Context) {
         pictureSize()?.let { it.width.toDouble() / it.height } ?: RATIO_4_3
 
     /**
-     * JPEG still size for the capture reader — the counterpart of TCAM's
+     * JPEG still size for the capture reader — the counterpart of the reference camera app's
      * `KEY_PICTURE_SIZE`: the largest JPEG output whose aspect matches [ratio]
      * (within [RATIO_TOLERANCE]), bounded to [MAX_CAPTURE_PIXELS] so the
      * viewfinder's framing matches the saved file. Falls back to the largest
@@ -168,7 +168,7 @@ class PlatformCamera(private val context: Context) {
     }
 
     /**
-     * Chooses the preview output size — the port of TCAM's
+     * Chooses the preview output size — the port of the reference camera app's
      * `CameraUtil.findBestMatchPanelSize` (reached through
      * `CommonPhotoMode.getLimitedPreviewSize`): among the SurfaceTexture-class
      * outputs whose aspect is within [RATIO_TOLERANCE] of the target, the
@@ -364,20 +364,20 @@ class PlatformCamera(private val context: Context) {
     /** Extra vendor params merged into the repeating preview request. */
     private fun applyVendorPreviewParams(req: CaptureRequest.Builder) {
         // Probe-and-write: on HALs without these keys the writes silently
-        // become no-ops after the first probe, matching TCAM's degradation.
+        // become no-ops after the first probe, matching the reference camera app's degradation.
         VendorKeys.Tran.asdMode.apply(req, 1)
         VendorKeys.Tran.brightnessValue.apply(req, 0)
         applyMeteringMode(req)
     }
 
-    /** Active metering selection — TCAM's `MeteringMode` ("auto"/"center"/"spot"/"average"). */
+    /** Active metering selection — the reference camera app's `MeteringMode` ("auto"/"center"/"spot"/"average"). */
     @Volatile private var meteringMode: String = "auto"
 
     /** Active Pro-mode override state, re-applied on any repeating rebuild so a
      *  vendor toggle never clobbers manual exposure/focus. */
     @Volatile private var manualControls = ManualControls()
 
-    /** TCAM's `MeteringMode`: byte 0=center 1=spot 2=average on the MTK AE key. */
+    /** the reference camera app's `MeteringMode`: byte 0=center 1=spot 2=average on the MTK AE key. */
     fun setMeteringMode(mode: String) {
         meteringMode = mode
         rebuildRepeating("metering mode $mode")
@@ -395,7 +395,7 @@ class PlatformCamera(private val context: Context) {
         VendorKeys.Mtk.aeMeteringMode.apply(req, byteArrayOf(value.toByte()))
     }
 
-    /** TCAM's `TranssionCameraMode` setting — 1/0 toggle, probe-gated. */
+    /** the reference camera app's `TranssionCameraMode` setting — 1/0 toggle, probe-gated. */
     private var transsionCameraModeOn = false
 
     fun setTranssionCameraMode(on: Boolean) {
@@ -537,7 +537,7 @@ class PlatformCamera(private val context: Context) {
     /**
      * Rebuilds the capture session to include one or more video encoder
      * surfaces. DualVideo passes two surfaces (main + companion stream) — the
-     * same multi-surface session organization TCAM's `CameraDataChannel` uses.
+     * same multi-surface session organization the reference camera app's `CameraDataChannel` uses.
      * Recording rides on the same repeating request as preview; all recorder
      * surfaces must be targeted by that request for frames to flow.
      */
@@ -614,14 +614,14 @@ class PlatformCamera(private val context: Context) {
         VendorKeys.Mtk.hdrMode.apply(req, 1)
         VendorKeys.Mtk.zslMode.apply(req, 1)
         // Metering + camera-mode selections ride the still requests too,
-        // matching TCAM's configParameters flow.
+        // matching the reference camera app's configParameters flow.
         applyMeteringMode(req)
         applyTranssionCameraMode(req)
     }
 
     /**
      * Scene flags decoded from vendor `CaptureResult` keys — the Stargazer
-     * counterpart of TCAM's `SceneResult` / ASD scene broadcasting. Nulls mean
+     * counterpart of the reference camera app's `SceneResult` / ASD scene broadcasting. Nulls mean
      * the HAL does not define that key (probed NOT_EXIST).
      */
     data class SceneFlags(

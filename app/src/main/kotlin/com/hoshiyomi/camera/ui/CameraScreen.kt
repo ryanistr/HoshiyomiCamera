@@ -152,7 +152,7 @@ fun CameraScreen(
         }
 
         // AR mode: ARCore owns the camera, so the Camera2 viewfinder is
-        // replaced by an ARCore GL surface (TCAM does the same with its
+        // replaced by an ARCore GL surface (the reference camera app does the same with its
         // GLSurfaceViewBackgroundController for ARCoreModeEntry).
         if (state.activeMode.id == "arspace") {
             ArScreen()
@@ -296,7 +296,7 @@ fun CameraScreen(
                 Spacer(Modifier.height(16.dp))
             }
             // The intent-capture activity has no mode grid — the caller picked
-            // the capture kind (TCAM's CaptureActivity hosts IntentPhotoMode).
+            // the capture kind (the reference camera app's CaptureActivity hosts IntentPhotoMode).
             if (!state.isIntentMode) {
                 ModePicker(
                     modes = state.modes,

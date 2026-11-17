@@ -1,11 +1,11 @@
-//! Panorama / wide-selfie stitching — replaces TCAM's `libpanorama.so` and
+//! Panorama / wide-selfie stitching — replaces the reference camera app's `libpanorama.so` and
 //! `libwideselfie.so`. Implements phase correlation on downscaled greyscale
 //! frames to estimate translation, then blends overlapping strips with a
 //! linear feather. The camera-app control loop (capture N frames while the
 //! user pans) lives on the Kotlin side; this module is the pure math.
 
 use crate::yuv::scale_bilinear;
-use crate::{TcamError, TcamResult};
+use crate::{HoshiyomiError, HoshiyomiResult};
 
 /// Estimate the horizontal translation between two frames using normalized
 /// phase correlation on the FFT... pure-Rust DFT is O(n² log-free), so we use
@@ -18,10 +18,10 @@ pub fn estimate_dx(
     width: u32,
     height: u32,
     max_shift: u32,
-) -> TcamResult<i32> {
+) -> HoshiyomiResult<i32> {
     let (w, h) = (width as usize, height as usize);
     if a.len() < w * h || b.len() < w * h {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let max = max_shift.min(w as u32 / 4) as i32;
     let mut best = (i64::MAX, 0i32);
@@ -57,15 +57,15 @@ pub fn stitch_pair(
     bpp: u32,
     dx: i32,
     out: &mut [u8],
-) -> TcamResult<(u32, u32)> {
+) -> HoshiyomiResult<(u32, u32)> {
     let (w, h) = (width as usize, height as usize);
     let bpp = bpp as usize;
     if left.len() < w * h * bpp || right.len() < w * h * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let dw = (w as i32 + (w as i32 - dx)).max(w as i32 + 1) as usize;
     if out.len() < dw * h * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let fade = (w as i32 - dx).max(0) as usize; // overlap width
     let fade = fade.min(w);
@@ -110,7 +110,7 @@ pub fn fit(
     dst_w: u32,
     dst_h: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     scale_bilinear(src, src_w, src_h, bpp, dst_w, dst_h, out)
 }
 
@@ -183,14 +183,14 @@ pub fn stitch_horizontal(
     bpp: u32,
     dxs: &[i32],
     out: &mut [u8],
-) -> TcamResult<u32> {
+) -> HoshiyomiResult<u32> {
     let (w, h, bpp) = (width as usize, height as usize, bpp as usize);
     if frames.len() != dxs.len() + 1 {
-        return Err(crate::TcamError::InvalidData);
+        return Err(crate::HoshiyomiError::InvalidData);
     }
     for f in frames {
         if f.len() < w * h * bpp {
-            return Err(crate::TcamError::BufferTooSmall);
+            return Err(crate::HoshiyomiError::BufferTooSmall);
         }
     }
     let mut offsets = vec![0u32; frames.len()];
@@ -200,7 +200,7 @@ pub fn stitch_horizontal(
     }
     let dw = *offsets.last().unwrap_or(&0) as usize + w;
     if out.len() < dw * h * bpp {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     for k in 0..frames.len() {
         let off = offsets[k] as usize;
@@ -291,6 +291,6 @@ mod multi_tests {
         let a = solid_grey(w, h, 1);
         let mut out = vec![0u8; w * 3 * h];
         let err = stitch_horizontal(&[&a], w as u32, h as u32, 1, &[1], &mut out).unwrap_err();
-        assert_eq!(err, crate::TcamError::InvalidData);
+        assert_eq!(err, crate::HoshiyomiError::InvalidData);
     }
 }

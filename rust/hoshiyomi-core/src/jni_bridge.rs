@@ -57,7 +57,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_yuv420ToRgba(
     v_px: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let yb = bytes(&env, &y)?;
         let ub = bytes(&env, &u)?;
         let vb = bytes(&env, &v)?;
@@ -83,7 +83,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_nv21ToRgba(
     src: JByteArray,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; (width as usize) * (height as usize) * 4];
         crate::yuv::nv21_to_rgba(width as u32, height as u32, &sb, &mut ob)?;
@@ -101,7 +101,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_rgbaToNv21(
     src: JByteArray,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; (width as usize) * (height as usize) * 3 / 2];
         crate::yuv::rgba_to_nv21(width as u32, height as u32, &sb, &mut ob)?;
@@ -122,7 +122,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_rotate(
     angle: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; sb.len()];
         let (dw, dh) = crate::yuv::rotate(&sb, width as u32, height as u32, bpp as u32, angle as u32, &mut ob)?;
@@ -142,7 +142,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_mirror(
     flip_v: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; sb.len()];
         crate::yuv::mirror(&sb, width as u32, height as u32, bpp as u32, flip_v != 0, &mut ob)?;
@@ -163,7 +163,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_scale(
     dst_h: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; sb.len()];
         crate::yuv::scale_bilinear(
@@ -189,7 +189,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_crop(
     h: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &src)?;
         let mut ob = vec![0u8; sb.len()];
         crate::yuv::crop(
@@ -215,7 +215,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_brightnessCon
     brightness: jni::sys::jfloat,
     contrast: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::imgproc::brightness_contrast(&mut buf, brightness, contrast)?;
         put_bytes(&env, &rgba, &buf)?;
@@ -233,7 +233,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_saturationWar
     saturation: jni::sys::jfloat,
     warmth: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::imgproc::saturation_warmth(&mut buf, saturation, warmth)?;
         put_bytes(&env, &rgba, &buf)?;
@@ -248,11 +248,11 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_applyCurve(
     rgba: JByteArray,
     curve: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         let c = bytes(&env, &curve)?;
         if c.len() < 256 {
-            return Err(crate::TcamError::BufferTooSmall);
+            return Err(crate::HoshiyomiError::BufferTooSmall);
         }
         let mut curve_arr = [0u8; 256];
         curve_arr.copy_from_slice(&c[..256]);
@@ -296,7 +296,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_gaussianBlur(
     radius: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &rgba)?;
         let mut ob = vec![0u8; sb.len()];
         crate::imgproc::gaussian_blur(&sb, width as u32, height as u32, radius as u32, &mut ob)?;
@@ -314,7 +314,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_vignette(
     height: jint,
     strength: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::imgproc::vignette(&mut buf, width as u32, height as u32, strength)?;
         put_bytes(&env, &rgba, &buf)?;
@@ -332,7 +332,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_sharpen(
     amount: jni::sys::jfloat,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &rgba)?;
         let mut ob = vec![0u8; sb.len()];
         crate::imgproc::sharpen(&sb, width as u32, height as u32, amount, &mut ob)?;
@@ -354,7 +354,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_detectSheet(
     width: jint,
     height: jint,
 ) -> jni::sys::jfloatArray {
-    let res = (|| -> Result<[f32; 8], crate::TcamError> {
+    let res = (|| -> Result<[f32; 8], crate::HoshiyomiError> {
         let gb = bytes(&env, &grey)?;
         let q = crate::docscan::detect_sheet(&gb, width as u32, height as u32)?;
         Ok([q.tl.x, q.tl.y, q.tr.x, q.tr.y, q.br.x, q.br.y, q.bl.x, q.bl.y])
@@ -412,7 +412,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_enhanceDocume
     _height: jint,
     whitePoint: jint,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::docscan::enhance_document(&mut buf, whitePoint as u8);
         put_bytes(&env, &rgba, &buf)?;
@@ -430,10 +430,10 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_otsuThreshold
     width: jint,
     height: jint,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let gb = bytes(&env, &grey)?;
         if gb.len() < (width as usize) * (height as usize) {
-            return Err(crate::TcamError::BufferTooSmall);
+            return Err(crate::HoshiyomiError::BufferTooSmall);
         }
         Ok(crate::docscan::otsu_threshold(&gb) as jint)
     }())
@@ -476,7 +476,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_nightLift(
     shadowPoint: jint,
     strength: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::imgproc::night_lift(&mut buf, shadowPoint as u8, strength);
         put_bytes(&env, &rgba, &buf)?;
@@ -498,7 +498,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_skinSmooth(
     intensity: jni::sys::jfloat,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &rgba)?;
         let mut ob = vec![0u8; sb.len()];
         crate::beauty::skin_smooth(&sb, width as u32, height as u32, intensity, &mut ob)?;
@@ -521,7 +521,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_faceEnhance(
     brighten: jni::sys::jfloat,
     soften: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::beauty::face_enhance(&mut buf, width as u32, height as u32, (fx, fy, fw, fh), brighten, soften)?;
         put_bytes(&env, &rgba, &buf)?;
@@ -542,7 +542,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_beautyPass(
     soften: jni::sys::jfloat,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &rgba)?;
         let mut ob = vec![0u8; sb.len()];
         let mut raw = vec![0f32; env.get_array_length(&faces)? as usize];
@@ -572,7 +572,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_depthOfField(
     max_radius: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sb = bytes(&env, &rgba)?;
         let db = bytes(&env, &depth)?;
         let mut ob = vec![0u8; sb.len()];
@@ -594,7 +594,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_compositeBoke
     edge_softness: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let sp = bytes(&env, &sharp)?;
         let bp = bytes(&env, &blurred)?;
         let mp = bytes(&env, &mask)?;
@@ -617,7 +617,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_portraitSpot(
     face_radius: jni::sys::jfloat,
     intensity: jni::sys::jfloat,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let mut buf = bytes(&env, &rgba)?;
         crate::bokeh::portrait_spot(&mut buf, width as u32, height as u32, cx, cy, face_radius, intensity)?;
         put_bytes(&env, &rgba, &buf)?;
@@ -645,7 +645,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_exifOrientati
     _class: JClass,
     jpeg: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let jb = bytes(&env, &jpeg)?;
         let entries = crate::exif::parse(&jb)?;
         Ok(entries
@@ -662,7 +662,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_exifMakeModel
     _class: JClass,
     jpeg: JByteArray,
 ) -> jni::sys::jstring {
-    let res = (|| -> Result<String, crate::TcamError> {
+    let res = (|| -> Result<String, crate::HoshiyomiError> {
         let jb = bytes(&env, &jpeg)?;
         let entries = crate::exif::parse(&jb)?;
         let make = entries
@@ -767,7 +767,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_decodeQr(
     // Camera frames are untrusted input: wrap in catch_unwind so a decoder
     // panic on a garbage frame returns "no code found" instead of aborting
     // the whole app process.
-    let res: Result<Result<Option<String>, crate::TcamError>, Box<dyn std::any::Any + Send>> =
+    let res: Result<Result<Option<String>, crate::HoshiyomiError>, Box<dyn std::any::Any + Send>> =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let gb = bytes(&env, &grey)?;
             Ok(crate::barcode::decode_frame(width as u32, height as u32, &gb)?
@@ -794,7 +794,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_detectFaces(
     width: jint,
     height: jint,
 ) -> jni::sys::jfloatArray {
-    let res = (|| -> Result<Vec<f32>, crate::TcamError> {
+    let res = (|| -> Result<Vec<f32>, crate::HoshiyomiError> {
         let gb = bytes(&env, &grey)?;
         let faces = crate::facedet::detect_faces(width as u32, height as u32, &gb)?;
         Ok(faces.iter().flat_map(|f| [f.x, f.y, f.w, f.h]).collect())
@@ -855,7 +855,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_estimateDx(
     height: jint,
     max_shift: jint,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let ab = bytes(&env, &a)?;
         let bb = bytes(&env, &b)?;
         Ok(crate::stitch::estimate_dx(&ab, &bb, width as u32, height as u32, max_shift as u32)? as jint)
@@ -874,7 +874,7 @@ pub extern "system" fn Java_com_hoshiyomi_camera_native_NativeCore_stitchPair(
     dx: jint,
     out: JByteArray,
 ) -> jint {
-    run!(env, || -> Result<jint, crate::TcamError> {
+    run!(env, || -> Result<jint, crate::HoshiyomiError> {
         let lb = bytes(&env, &left)?;
         let rb = bytes(&env, &right)?;
         let mut ob = vec![0u8; lb.len() + rb.len()];

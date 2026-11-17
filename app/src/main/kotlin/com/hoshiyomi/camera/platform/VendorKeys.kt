@@ -6,7 +6,7 @@ import android.hardware.camera2.CaptureResult
 import android.util.Log
 
 /**
- * Vendor-extension key registry — direct reimplementation of TCAM's
+ * Vendor-extension key registry — direct reimplementation of the reference camera app's
  * `adapter/platformcamera/CaptureRequestKey` + `CaptureResultKey` + `Key`.
  *
  * Camera HAL extensions are constructed from raw key-name strings at runtime
@@ -109,7 +109,7 @@ object VendorKeys {
         val mfnrMfb = RequestKey("com.mediatek.mfnrfeature.mfbmode", Int::class.java)
         val videoHfps = RequestKey("com.mediatek.streamingfeature.hfpsMode", Int::class.java)
         val multiCamMode = RequestKey("com.mediatek.multicamfeature.multiCamFeatureMode", Int::class.java)
-        // TCAM's MeteringMode setting writes 0=center / 1=spot / 2=average here.
+        // the reference camera app's MeteringMode setting writes 0=center / 1=spot / 2=average here.
         val aeMeteringMode = RequestKey("com.mediatek.3afeature.aeMeteringMode", ByteArray::class.java)
         val proprietaryRequest = RequestKey(
             "com.mediatek.configure.setting.proprietaryRequest", Int::class.java,
@@ -128,7 +128,7 @@ object VendorKeys {
         val nightMode = RequestKey("com.transsion.nightMode", Int::class.java)
         val screenFlashMode = RequestKey("com.transsion.screenflashmode", Int::class.java)
         val magicSkyMode = RequestKey("com.transsion.magicskymode", Int::class.java)
-        // TCAM's TranssionCameraMode / CamMode settings both land on this int[]:
+        // the reference camera app's TranssionCameraMode / CamMode settings both land on this int[]:
         // CamMode → setAppModeId(value), TranssionCameraMode → 0/1 toggle.
         val transsionCameraMode = RequestKey("com.transsion.transsioncameramode", IntArray::class.java)
         val brightnessValue = RequestKey(

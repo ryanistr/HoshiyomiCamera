@@ -1,10 +1,10 @@
-//! Face detection — replaces TCAM's `libcvface_api.so` for the camera-use case:
+//! Face detection — replaces the reference camera app's `libcvface_api.so` for the camera-use case:
 //! finding one or more upright frontal faces inside a preview downscaled to a
 //! 320-wide detection grid. Uses a Viola-Jones-style cascade over integral
 //! images and Haar-like features, i.e. no network download, no license.
 
 use crate::yuv::scale_bilinear;
-use crate::TcamResult;
+use crate::HoshiyomiResult;
 
 /// A detected face in normalized [0,1] coordinates (camera-agnostic; the caller
 /// maps to view coordinates with the display transform).
@@ -125,10 +125,10 @@ fn cascade_pass(ii: &[u64], w: usize, x: usize, y: usize, s: usize) -> u32 {
 
 /// Detect upright faces in a greyscale frame. Returns rectangles normalized to
 /// the input frame size.
-pub fn detect_faces(width: u32, height: u32, grey: &[u8]) -> TcamResult<Vec<FaceRect>> {
+pub fn detect_faces(width: u32, height: u32, grey: &[u8]) -> HoshiyomiResult<Vec<FaceRect>> {
     let (w, h) = (width as usize, height as usize);
     if grey.len() < w * h {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     // Downscale to at most DETECT_W wide for a fixed detection cost.
     let scale = (w as f32 / DETECT_W as f32).max(1.0);
@@ -179,7 +179,7 @@ pub fn detect_faces(width: u32, height: u32, grey: &[u8]) -> TcamResult<Vec<Face
 }
 
 /// Group faces into an exposure/metering bias: the average luma of the face
-/// region compared to the scene average. Mirrors TCAM's `enableFace3A`.
+/// region compared to the scene average. Mirrors the reference camera app's `enableFace3A`.
 pub fn face_metering_bias(width: u32, height: u32, grey: &[u8], faces: &[FaceRect]) -> f32 {
     let (w, h) = (width as usize, height as usize);
     if faces.is_empty() || grey.len() < w * h {

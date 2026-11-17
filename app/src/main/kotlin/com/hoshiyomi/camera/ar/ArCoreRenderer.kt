@@ -19,7 +19,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 /**
- * ARCore renderer for the AR mode — the Stargazer counterpart of TCAM's
+ * ARCore renderer for the AR mode — the Stargazer counterpart of the reference camera app's
  * `GLSurfaceViewBackgroundController` + `ARPreview`: ARCore owns the camera for
  * this mode and renders its background directly; the Compose layer draws the
  * chrome on top.

@@ -2,7 +2,7 @@ package com.hoshiyomi.camera.mode
 
 /**
  * A camera mode — the unit of feature composition in the Stargazer camera,
- * mirroring TCAM's `ICameraMode` + `ModeFeatureEntryBase` split.
+ * mirroring the reference camera app's `ICameraMode` + `ModeFeatureEntryBase` split.
  *
  * Modes are enumerated by [id], ordered per camera direction in
  * [ModeRegistry], and render their own overlay through [overlay]; the capture
@@ -33,7 +33,7 @@ data class ModeSetting(
     val defaultIndex: Int = 0
 )
 
-/** Mode registry — the Stargazer counterpart of TCAM's resource string-arrays
+/** Mode registry — the Stargazer counterpart of the reference camera app's resource string-arrays
  * `build_in_features_back_mode_order` / `build_in_features_front_mode_order`. */
 object ModeRegistry {
 
@@ -65,7 +65,7 @@ object ModeRegistry {
         )
     }
 
-    /** MakeUp (TCAM `MakeUpModeEntry`): the face-beauty family at its
+    /** MakeUp (the reference camera app `MakeUpModeEntry`): the face-beauty family at its
      *  strongest smoothing — the Rust `beauty` module replaces the vendor's
      *  `libeffect.so` FaceBeauty + makeup pipeline. */
     val makeup = object : CameraMode {
@@ -77,7 +77,7 @@ object ModeRegistry {
         )
     }
 
-    /** WideSelfie (TCAM `WideSelfieModeEntry`): front-camera panorama, gated to
+    /** WideSelfie (the reference camera app `WideSelfieModeEntry`): front-camera panorama, gated to
      *  the front sensor like the original's mode list places it. */
     val wideselfie = object : CameraMode {
         override val id = "wideselfie"
@@ -85,7 +85,7 @@ object ModeRegistry {
         override val isVideo = false
     }
 
-    /** STBlur (TCAM `STBlurModeEntry`): front-camera portrait bokeh. */
+    /** STBlur (the reference camera app `STBlurModeEntry`): front-camera portrait bokeh. */
     val stblur = object : CameraMode {
         override val id = "stblur"
         override val title = "Selfie Blur"
@@ -93,7 +93,7 @@ object ModeRegistry {
         override fun settings() = portrait.settings()
     }
 
-    /** AR Space (TCAM `ARCoreModeEntry`, titled "AR Space" when its entrance is
+    /** AR Space (the reference camera app `ARCoreModeEntry`, titled "AR Space" when its entrance is
      *  enabled): ARCore owns the camera for this mode and the Compose chrome
      *  layers on top. Surfaced only where Google Play Services for AR is
      *  installed — the CameraScreen filters on availability. */
@@ -110,7 +110,7 @@ object ModeRegistry {
         override fun settings() = listOf(
             ModeSetting("iso", "ISO", listOf("Auto", "100", "200", "400", "800", "1600")),
             ModeSetting("wb", "White balance", listOf("Auto", "Daylight", "Cloudy", "Incandescent")),
-            // TCAM's MeteringMode: auto/center/spot/average (professional scope).
+            // the reference camera app's MeteringMode: auto/center/spot/average (professional scope).
             ModeSetting("metering", "Metering", listOf("Auto", "Center", "Spot", "Average"))
         )
     }
@@ -127,7 +127,7 @@ object ModeRegistry {
         override val isVideo = false
     }
 
-    // ---- capture-profile preset modes (TCAM: MacroModeEntry,
+    // ---- capture-profile preset modes (the reference camera app: MacroModeEntry,
     // HighDefinitionModeEntry, SuperNightEntry, SuperNightFilterModeEntry,
     // SuperMoonModeEntry, MagicSkyModeEntry, ASDModeEntry, SdofPhotoEntry) ----
     val macro = object : CameraMode {
@@ -152,7 +152,7 @@ object ModeRegistry {
         override val id = "asd" ; override val title = "Auto Scene" ; override val isVideo = false
     }
 
-    // ---- video-family modes (TCAM: SlowMotionModeEntry, TimeLapseVideoModeEntry,
+    // ---- video-family modes (the reference camera app: SlowMotionModeEntry, TimeLapseVideoModeEntry,
     // DualVideoModeEntry, MovieModeEntry, FunVideoModeEntry) ----
     val slowmotion = object : CameraMode {
         override val id = "slowmotion" ; override val title = "Slow-Mo" ; override val isVideo = true
@@ -171,7 +171,7 @@ object ModeRegistry {
         override val id = "funvideo" ; override val title = "Fun Video" ; override val isVideo = true
     }
 
-    // ---- capture-flow modes (TCAM: BurstPMKModeEntry, DocumentEntry) ----
+    // ---- capture-flow modes (the reference camera app: BurstPMKModeEntry, DocumentEntry) ----
     val burstpmk = object : CameraMode {
         override val id = "burstpmk" ; override val title = "Burst" ; override val isVideo = false
     }

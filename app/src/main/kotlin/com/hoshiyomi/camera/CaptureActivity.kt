@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
- * Launch-for-result capture — the Stargazer counterpart of TCAM's
+ * Launch-for-result capture — the Stargazer counterpart of the reference camera app's
  * `CaptureActivity` + `IntentPhotoMode` / `IntentASDMode` / `IntentVideoMode`.
  *
  * `android.media.action.IMAGE_CAPTURE` (and our FANS parity action) land here
@@ -76,7 +76,7 @@ class CaptureActivity : ComponentActivity() {
                         finish()
                     }
                     result.data?.action == CROP_ACTION -> {
-                        // TCAM attachToCropIntent: hand the temp JPEG to the
+                        // the reference camera app attachToCropIntent: hand the temp JPEG to the
                         // crop flow with output/return-data; propagate back.
                         runCatching { cropLauncher.launch(result.data) }
                             .onFailure {
@@ -94,9 +94,9 @@ class CaptureActivity : ComponentActivity() {
     }
 
     private companion object {
-        /** The AOSP crop flow the original forwards to (TCAM `CROP_INTENT`). */
+        /** The AOSP crop flow the original forwards to (the reference camera app `CROP_INTENT`). */
         const val CROP_ACTION = "com.android.camera.action.CROP"
-        /** Parity with TCAM's `android.media.action.FANS_IMAGE_CAPTURE` entry. */
+        /** Parity with the reference camera app's `android.media.action.FANS_IMAGE_CAPTURE` entry. */
         const val FANS_IMAGE_CAPTURE = "com.hoshiyomi.camera.action.FANS_IMAGE_CAPTURE"
     }
 }

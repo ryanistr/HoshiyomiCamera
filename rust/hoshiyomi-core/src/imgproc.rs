@@ -1,7 +1,7 @@
-//! Image processing pipeline — replaces TCAM's `libArcFilter.so` filter passes
+//! Image processing pipeline — replaces the reference camera app's `libArcFilter.so` filter passes
 //! and the color/tone half of `libeffect.so`. Operates directly on RGBA pixels.
 
-use crate::TcamResult;
+use crate::HoshiyomiResult;
 
 /// 256-entry tone curve (identity-free). Used by filters and beauty ops.
 pub type Curve = [u8; 256];
@@ -15,7 +15,7 @@ pub fn identity_curve() -> Curve {
 }
 
 /// Apply a tone curve to each RGB channel.
-pub fn apply_curve(rgba: &mut [u8], curve: &Curve) -> TcamResult<()> {
+pub fn apply_curve(rgba: &mut [u8], curve: &Curve) -> HoshiyomiResult<()> {
     for px in rgba.chunks_exact_mut(4) {
         px[0] = curve[px[0] as usize];
         px[1] = curve[px[1] as usize];
@@ -25,7 +25,7 @@ pub fn apply_curve(rgba: &mut [u8], curve: &Curve) -> TcamResult<()> {
 }
 
 /// Brightness in [-1.0, 1.0]; contrast centered at 0.5.
-pub fn brightness_contrast(rgba: &mut [u8], brightness: f32, contrast: f32) -> TcamResult<()> {
+pub fn brightness_contrast(rgba: &mut [u8], brightness: f32, contrast: f32) -> HoshiyomiResult<()> {
     let b = (brightness * 255.0) as i32;
     let c = 1.0 + contrast;
     for px in rgba.chunks_exact_mut(4) {
@@ -40,7 +40,7 @@ pub fn brightness_contrast(rgba: &mut [u8], brightness: f32, contrast: f32) -> T
 }
 
 /// Saturation multiplier (1.0 = identity) and warmth in [-1.0, 1.0].
-pub fn saturation_warmth(rgba: &mut [u8], saturation: f32, warmth: f32) -> TcamResult<()> {
+pub fn saturation_warmth(rgba: &mut [u8], saturation: f32, warmth: f32) -> HoshiyomiResult<()> {
     let w = (warmth * 30.0) as i32;
     for px in rgba.chunks_exact_mut(4) {
         let r = px[0] as f32;
@@ -67,11 +67,11 @@ pub fn gaussian_blur(
     height: u32,
     radius: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let r = radius as usize;
     if rgba.len() < w * h * 4 || out.len() < w * h * 4 || w * h == 0 {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     if r == 0 {
         out.copy_from_slice(rgba);
@@ -144,7 +144,7 @@ pub fn gaussian_blur(
 
 /// Vignette: darkens corners with a smooth radial falloff. `strength` in
 /// [0.0, 1.0].
-pub fn vignette(rgba: &mut [u8], width: u32, height: u32, strength: f32) -> TcamResult<()> {
+pub fn vignette(rgba: &mut [u8], width: u32, height: u32, strength: f32) -> HoshiyomiResult<()> {
     let (w, h) = (width as f32, height as f32);
     let cx = w / 2.0;
     let cy = h / 2.0;
@@ -171,11 +171,11 @@ pub fn sharpen(
     height: u32,
     amount: f32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     if rgba.len() < width as usize * height as usize * 4
         || out.len() < width as usize * height as usize * 4
     {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     // Sharpen = original + amount * (original - blurred).
     let mut tmp = vec![0u8; rgba.len()];
@@ -205,14 +205,14 @@ pub fn mean_stack(
     height: u32,
     bpp: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h, bpp) = (width as usize, height as usize, bpp as usize);
     if frames.is_empty() || out.len() < w * h * bpp {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     for f in frames {
         if f.len() < w * h * bpp {
-            return Err(crate::TcamError::BufferTooSmall);
+            return Err(crate::HoshiyomiError::BufferTooSmall);
         }
     }
     let n = frames.len() as u32;
@@ -253,7 +253,7 @@ pub fn night_lift(rgba: &mut [u8], shadow_point: u8, strength: f32) {
 
 /// 3×3 per-channel matrix (RGB→RGB), matching the `ImageStyleEntry` /
 /// `ArcFilter` color-grading matrices.
-pub fn color_matrix(rgba: &mut [u8], m: &[f32; 9]) -> TcamResult<()> {
+pub fn color_matrix(rgba: &mut [u8], m: &[f32; 9]) -> HoshiyomiResult<()> {
     for px in rgba.chunks_exact_mut(4) {
         let r = px[0] as f32;
         let g = px[1] as f32;
@@ -268,7 +268,7 @@ pub fn color_matrix(rgba: &mut [u8], m: &[f32; 9]) -> TcamResult<()> {
     Ok(())
 }
 
-/// Predefined style matrices mirroring TCAM's filter catalog
+/// Predefined style matrices mirroring the reference camera app's filter catalog
 /// (`TranssionFilterEntry` / `ArcFilterEntry`).
 pub mod styles {
     use super::Curve;
@@ -433,7 +433,7 @@ mod tests {
         let mut out = vec![0u8; w * h * 4];
         assert_eq!(
             mean_stack(&[&a, &b], w as u32, h as u32, 4, &mut out).unwrap_err(),
-            crate::TcamError::BufferTooSmall
+            crate::HoshiyomiError::BufferTooSmall
         );
     }
 

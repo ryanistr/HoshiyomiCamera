@@ -1,8 +1,8 @@
-//! Document scanning — replaces the document-mode role of TCAM's
+//! Document scanning — replaces the document-mode role of the reference camera app's
 //! `libXDocProcessSDK.so` (Youtu docprocess): edge detection, sheet
 //! localisation, perspective rectification and background white-balancing.
 
-use crate::TcamResult;
+use crate::HoshiyomiResult;
 
 /// 2D point in pixel coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -22,10 +22,10 @@ pub struct Quad {
 
 /// Sobel gradient magnitude of a greyscale frame. Used to find the sheet edges
 /// and to score perspective rectification quality.
-pub fn sobel_magnitude(grey: &[u8], width: u32, height: u32, out: &mut [u8]) -> TcamResult<()> {
+pub fn sobel_magnitude(grey: &[u8], width: u32, height: u32, out: &mut [u8]) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     if grey.len() < w * h || out.len() < w * h {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     for y in 1..h - 1 {
         for x in 1..w - 1 {
@@ -51,10 +51,10 @@ pub fn sobel_magnitude(grey: &[u8], width: u32, height: u32, out: &mut [u8]) -> 
 /// Detect the sheet: the biggest bright (paper-like) blob's bounding box,
 /// padded and returned as a quad. Uses an Otsu-style global split — paper is
 /// almost always the bright subject on a dark table.
-pub fn detect_sheet(grey: &[u8], width: u32, height: u32) -> TcamResult<Quad> {
+pub fn detect_sheet(grey: &[u8], width: u32, height: u32) -> HoshiyomiResult<Quad> {
     let (w, h) = (width as usize, height as usize);
     if grey.len() < w * h {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     let thresh = otsu_threshold(grey);
     // Margin so the crop keeps the sheet border (documents lose content at a
@@ -147,12 +147,12 @@ pub fn rectify(
     out_w: u32,
     out_h: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (sw, sh, dw, dh, bpp) = (
         src_w as usize, src_h as usize, out_w as usize, out_h as usize, bpp as usize,
     );
     if src.len() < sw * sh * bpp || out.len() < dw * dh * bpp {
-        return Err(crate::TcamError::BufferTooSmall);
+        return Err(crate::HoshiyomiError::BufferTooSmall);
     }
     // Bilinear weights across the destination: interpolate between the four
     // corners as (u, v) blending (like the panorama bilinear, 2D version).
@@ -349,7 +349,7 @@ mod tests {
         let mut out = vec![0u8; 10];
         assert_eq!(
             sobel_magnitude(&g, 10, 10, &mut out).unwrap_err(),
-            crate::TcamError::BufferTooSmall
+            crate::HoshiyomiError::BufferTooSmall
         );
     }
 }

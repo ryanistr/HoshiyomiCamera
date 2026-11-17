@@ -1,13 +1,13 @@
-//! Portrait bokeh — replaces TCAM's `libstblur_preview_api.so` portrait blur
+//! Portrait bokeh — replaces the reference camera app's `libstblur_preview_api.so` portrait blur
 //! pass. Depth comes from the caller (a depth map from the depth sensor, from
 //! dual-camera stereo, or a segmentation mask); this module composites a
 //! blurred background with a sharp foreground and composes the final look.
 
-use crate::{imgproc, TcamError, TcamResult};
+use crate::{imgproc, HoshiyomiError, HoshiyomiResult};
 
 /// Aperture-style blur strength. `f_stop` maps onto an effective radius:
 /// larger aperture (smaller f) → stronger blur, mirroring the `f0.0…f9.0`
-/// setting string TCAM exposes via `STBlurEntry`.
+/// setting string the reference camera app exposes via `STBlurEntry`.
 pub fn aperture_radius(f_stop: f32, preview_short_side: u32) -> u32 {
     // Clamp to the range the UI exposes; double the radius per stop as a
     // reasonable proxy for sensor-side depth of field.
@@ -27,11 +27,11 @@ pub fn depth_of_field(
     height: u32,
     max_radius: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let n = w * h;
     if rgba.len() < n * 4 || depth.len() < n || out.len() < n * 4 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     // Pyramid of progressively blurred copies — one extra buffer per octave
     // keeps the whole pass at ~O(r) per pixel instead of O(r²).
@@ -77,11 +77,11 @@ pub fn composite_bokeh(
     height: u32,
     edge_softness: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let n = w * h;
     if sharp.len() < n * 4 || blurred.len() < n * 4 || mask.len() < n || out.len() < n * 4 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     if edge_softness == 0 {
         for (i, px) in out.chunks_exact_mut(4).enumerate() {
@@ -149,7 +149,7 @@ pub fn portrait_spot(
     face_cy: f32,
     face_radius: f32,
     intensity: f32,
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as f32, height as f32);
     let gain = 1.0 + intensity.clamp(-0.5, 0.5);
     let r2 = (face_radius * 1.6).max(1.0);

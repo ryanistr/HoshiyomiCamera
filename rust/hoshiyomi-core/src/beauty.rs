@@ -1,4 +1,4 @@
-//! Beauty engine — replaces the beauty half of TCAM's `libeffect.so` /
+//! Beauty engine — replaces the beauty half of the reference camera app's `libeffect.so` /
 //! ByteDance `bef.effectsdk`, i.e. the "skin smoothing" + "face enhancement"
 //! passes of FaceBeautyEntry and VideoFaceBeautyEntry.
 //!
@@ -9,7 +9,7 @@
 //! survive. The blur is a 3-iteration box blur (≈ a Gaussian at 1/3 the cost)
 //! built on the existing [`crate::imgproc::gaussian_blur`] plumbing.
 
-use crate::{imgproc, TcamError, TcamResult};
+use crate::{imgproc, HoshiyomiError, HoshiyomiResult};
 
 /// Skin smoothing over the whole frame. `intensity` in [0.0, 1.0] — 0 is
 /// identity, 1 removes all high-frequency detail.
@@ -19,11 +19,11 @@ pub fn skin_smooth(
     height: u32,
     intensity: f32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let n = w * h * 4;
     if rgba.len() < n || out.len() < n {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let t = intensity.clamp(0.0, 1.0);
     if t == 0.0 {
@@ -57,11 +57,11 @@ pub fn face_enhance(
     face: (f32, f32, f32, f32),
     brighten: f32,
     soften: f32,
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let n = w * h * 4;
     if rgba.len() < n {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let (fx, fy, fw, fh) = face;
     let cx = fx * w as f32;
@@ -112,7 +112,7 @@ pub fn beauty_pass(
     brighten: f32,
     soften: f32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     skin_smooth(rgba, width, height, smoothing, out)?;
     for face in faces {
         face_enhance(out, width, height, *face, brighten, soften)?;
@@ -253,7 +253,7 @@ mod tests {
         let mut out = vec![0u8; 10];
         assert_eq!(
             skin_smooth(&src, w as u32, h as u32, 0.5, &mut out).unwrap_err(),
-            TcamError::BufferTooSmall
+            HoshiyomiError::BufferTooSmall
         );
     }
 }

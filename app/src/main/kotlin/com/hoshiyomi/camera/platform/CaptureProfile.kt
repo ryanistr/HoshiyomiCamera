@@ -5,7 +5,7 @@ import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 
 /**
- * Capture-parameter presets — the Stargazer counterpart of TCAM's per-mode
+ * Capture-parameter presets — the Stargazer counterpart of the reference camera app's per-mode
  * `captureParams` (MacroModeEntry / HighDefinitionModeEntry / SuperNightEntry /
  * SuperMoonRestriction / MagicSkyEntry / ASDModeEntry / SdofPhotoEntry). Each
  * profile maps mode intent onto standard Camera2 controls plus the probed

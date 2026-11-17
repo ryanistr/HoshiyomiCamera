@@ -1,11 +1,11 @@
-//! YUV plane handling — replacement for TCAM's `libyuvutil.so`.
+//! YUV plane handling — replacement for the reference camera app's `libyuvutil.so`.
 //!
 //! Camera2 hands out [`PixelFormat::Yuv420p`] (three planes with independent row
 //! strides) while GL, JPEG encoders and face detectors all want different layouts.
 //! Every function here works on caller-owned slices with explicit strides so the
 //! Java side passes Image plane buffers directly with zero copies.
 
-use crate::{TcamError, TcamResult};
+use crate::{HoshiyomiError, HoshiyomiResult};
 
 // ---------------------------------------------------------------------------
 // BT.601 limited-range conversion (the range Camera2/AW produces).
@@ -53,16 +53,16 @@ pub fn yuv420_to_rgba(
     v_stride: u32,
     v_px: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let (ys, us, vs) = (y_stride as usize, u_stride as usize, v_stride as usize);
     let (up, vp) = (u_px as usize, v_px as usize);
     if w == 0 || h == 0 {
-        return Err(TcamError::BadDimensions);
+        return Err(HoshiyomiError::BadDimensions);
     }
     let need = w * h * 4;
     if out.len() < need {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let chroma_rows = (h + 1) / 2;
     let chroma_w = (w + 1) / 2;
@@ -74,7 +74,7 @@ pub fn yuv420_to_rgba(
     let u_last = (chroma_rows - 1) * us + (chroma_w - 1) * up;
     let v_last = (chroma_rows - 1) * vs + (chroma_w - 1) * vp;
     if y.len() <= y_last || u.len() <= u_last || v.len() <= v_last {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
 
     for j in 0..h {
@@ -97,16 +97,16 @@ pub fn yuv420_to_rgba(
 
 /// NV21 (Y + interleaved VU) → RGBA. Common from the legacy camera API and from
 /// `ImageReader` when the producer chooses NV21.
-pub fn nv21_to_rgba(width: u32, height: u32, src: &[u8], out: &mut [u8]) -> TcamResult<()> {
+pub fn nv21_to_rgba(width: u32, height: u32, src: &[u8], out: &mut [u8]) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let y_size = w * h;
     let chroma_rows = (h + 1) / 2;
     let chroma_w = (w + 1) / 2;
     if src.len() < y_size + chroma_rows * chroma_w * 2 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     if out.len() < y_size * 4 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     for j in 0..h {
         for i in 0..w {
@@ -125,16 +125,16 @@ pub fn nv21_to_rgba(width: u32, height: u32, src: &[u8], out: &mut [u8]) -> Tcam
 
 /// Reverse of [`nv21_to_rgba`] — RGBA → NV21, used when feeding the camera
 /// pipeline from a GL readback.
-pub fn rgba_to_nv21(width: u32, height: u32, src: &[u8], out: &mut [u8]) -> TcamResult<()> {
+pub fn rgba_to_nv21(width: u32, height: u32, src: &[u8], out: &mut [u8]) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let y_size = w * h;
     let chroma_rows = (h + 1) / 2;
     let chroma_w = (w + 1) / 2;
     if src.len() < y_size * 4 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     if out.len() < y_size + chroma_rows * chroma_w * 2 {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     for j in 0..h {
         for i in 0..w {
@@ -169,17 +169,17 @@ pub fn rotate(
     bpp: u32,
     angle: u32,
     out: &mut [u8],
-) -> TcamResult<(u32, u32)> {
+) -> HoshiyomiResult<(u32, u32)> {
     if angle % 90 != 0 {
-        return Err(TcamError::BadAngle);
+        return Err(HoshiyomiError::BadAngle);
     }
     let (sw, sh) = (src_w as usize, src_h as usize);
     let bpp = bpp as usize;
     if sw == 0 || sh == 0 {
-        return Err(TcamError::BadDimensions);
+        return Err(HoshiyomiError::BadDimensions);
     }
     if src.len() < sw * sh * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     let turns = (angle / 90) % 4;
     let (dw, dh) = match turns {
@@ -188,7 +188,7 @@ pub fn rotate(
     };
     let (dw, dh) = (dw as usize, dh as usize);
     if out.len() < dw * dh * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     match turns {
         0 => out[..sw * sh * bpp].copy_from_slice(&src[..sw * sh * bpp]),
@@ -234,11 +234,11 @@ pub fn mirror(
     bpp: u32,
     flip_v: bool,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (w, h) = (width as usize, height as usize);
     let bpp = bpp as usize;
     if src.len() < w * h * bpp || out.len() < w * h * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     if flip_v {
         for y in 0..h {
@@ -266,7 +266,7 @@ pub fn mirror(
     Ok(())
 }
 
-/// Bilinear scale of a packed buffer. Used for thumbnail generation (TCAM's
+/// Bilinear scale of a packed buffer. Used for thumbnail generation (the reference camera app's
 /// "fast thumb" surface) and preview-size reduction before face detect.
 pub fn scale_bilinear(
     src: &[u8],
@@ -276,16 +276,16 @@ pub fn scale_bilinear(
     dst_w: u32,
     dst_h: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (sw, sh, dw, dh) = (
         src_w as usize, src_h as usize, dst_w as usize, dst_h as usize,
     );
     let bpp = bpp as usize;
     if src.len() < sw * sh * bpp || out.len() < dw * dh * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     if dw == 0 || dh == 0 {
-        return Err(TcamError::BadDimensions);
+        return Err(HoshiyomiError::BadDimensions);
     }
     // Fixed-point sampling: map dst coords onto src, edge-inclusive.
     let x_ratio = (sw as u64).wrapping_mul(1 << 16) / dw as u64;
@@ -326,15 +326,15 @@ pub fn crop(
     w: u32,
     h: u32,
     out: &mut [u8],
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     let (sw, sh) = (src_w as usize, src_h as usize);
     let (cx, cy, cw, ch) = (x as usize, y as usize, w as usize, h as usize);
     let bpp = bpp as usize;
     if cx + cw > sw || cy + ch > sh {
-        return Err(TcamError::OutOfRange);
+        return Err(HoshiyomiError::OutOfRange);
     }
     if src.len() < sw * sh * bpp || out.len() < cw * ch * bpp {
-        return Err(TcamError::BufferTooSmall);
+        return Err(HoshiyomiError::BufferTooSmall);
     }
     for r in 0..ch {
         let s = ((cy + r) * sw + cx) * bpp;
@@ -466,15 +466,15 @@ mod tests {
         let mut out = vec![0u8; 16];
         assert_eq!(
             rotate(&src, 4, 4, 1, 45, &mut out).unwrap_err(),
-            TcamError::BadAngle
+            HoshiyomiError::BadAngle
         );
         assert_eq!(
             rotate(&src, 0, 4, 1, 90, &mut out).unwrap_err(),
-            TcamError::BadDimensions
+            HoshiyomiError::BadDimensions
         );
         assert_eq!(
             crop(&src, 4, 4, 1, 3, 3, 4, 4, &mut out).unwrap_err(),
-            TcamError::OutOfRange
+            HoshiyomiError::OutOfRange
         );
     }
 
@@ -528,6 +528,6 @@ mod tests {
         let mut out = vec![0u8; w * h * 4];
         let err = yuv420_to_rgba(w as u32, h as u32, &y, w as u32, &u, w as u32, 2, &v, w as u32, 2, &mut out)
             .unwrap_err();
-        assert!(matches!(err, TcamError::BufferTooSmall));
+        assert!(matches!(err, HoshiyomiError::BufferTooSmall));
     }
 }

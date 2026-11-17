@@ -2,7 +2,7 @@
 //! Rust parser. Camera JPEGs arrive as `byte[]`; this module reads GPS, orientation,
 //! timestamps and maker tags from those bytes without instantiating a Bitmap.
 
-use crate::{TcamError, TcamResult};
+use crate::{HoshiyomiError, HoshiyomiResult};
 
 /// TIFF byte order tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,20 +87,20 @@ const MAX_ENTRIES: usize = 256;
 /// Parse the EXIF segment of a JPEG. Accepts the raw JPEG bytes and locates the
 /// APP1/Exif block; passing an already-extracted TIFF blob also works because the
 /// parser scans for the `II`/`MM` magic when the JPEG signature is absent.
-pub fn parse(data: &[u8]) -> TcamResult<Vec<ExifEntry>> {
-    let body = locate_exif(data).ok_or(TcamError::InvalidData)?;
+pub fn parse(data: &[u8]) -> HoshiyomiResult<Vec<ExifEntry>> {
+    let body = locate_exif(data).ok_or(HoshiyomiError::InvalidData)?;
     let body = &data[body..];
     if body.len() < 8 {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     let endian = match &body[..2] {
         b"II" => Endian::Little,
         b"MM" => Endian::Big,
-        _ => return Err(TcamError::InvalidData),
+        _ => return Err(HoshiyomiError::InvalidData),
     };
     let magic = endian.u16(&body[2..4]);
     if magic != 0x2a {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     let ifd0_off = endian.u32(&body[4..8]) as usize;
     let mut out = Vec::new();
@@ -147,13 +147,13 @@ fn read_ifd(
     offset: usize,
     out: &mut Vec<ExifEntry>,
     depth: usize,
-) -> TcamResult<()> {
+) -> HoshiyomiResult<()> {
     if depth > 4 || offset + 2 > body.len() {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     let count = endian.u16(&body[offset..offset + 2]) as usize;
     if count > MAX_ENTRIES || offset + 2 + count * 12 + 4 > body.len() {
-        return Err(TcamError::InvalidData);
+        return Err(HoshiyomiError::InvalidData);
     }
     let mut exif_ifd_off = None;
     let mut gps_ifd_off = None;
@@ -277,7 +277,7 @@ impl WriteTag {
 
 /// Serialize tags as a complete APP1 (Exif) JPEG segment, ready to insert after
 /// the SOI marker.
-pub fn build_app1(tags: &[WriteTag]) -> TcamResult<Vec<u8>> {
+pub fn build_app1(tags: &[WriteTag]) -> HoshiyomiResult<Vec<u8>> {
     // Layout: II*\0 + IFD0 offset(4) + IFD0 + next-IFD(4=0) + payloads.
     let header = 8usize;
     let ifd_size = 2 + tags.len() * 12 + 4;
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn rejects_non_jpeg() {
         let junk = vec![0u8; 64];
-        assert_eq!(parse(&junk).unwrap_err(), TcamError::InvalidData);
+        assert_eq!(parse(&junk).unwrap_err(), HoshiyomiError::InvalidData);
     }
 
     #[test]

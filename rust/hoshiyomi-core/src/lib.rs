@@ -1,6 +1,6 @@
 //! Stargazer Camera (HoshiyomiCam) native compute core.
 //!
-//! Replaces the prebuilt libraries shipped inside TCAM.apk:
+//! Replaces the prebuilt libraries shipped inside the reference camera APK:
 //! - [`yuv`]      -> libyuvutil.so
 //! - [`exif`]     -> the app's 1,586-LOC ExifInterface
 //! - [`barcode`]  -> libzbar.so
@@ -34,7 +34,7 @@ fn _docs() {}
 
 /// Crate-wide error type. JNI boundary maps these to Java exceptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TcamError {
+pub enum HoshiyomiError {
     /// Input buffer smaller than width*height*expected_bpp.
     BufferTooSmall,
     /// Width or height is zero / not a multiple required by the format.
@@ -49,12 +49,12 @@ pub enum TcamError {
     BadAngle,
 }
 
-pub type TcamResult<T> = Result<T, TcamError>;
+pub type HoshiyomiResult<T> = Result<T, HoshiyomiError>;
 
 #[cfg(feature = "jni")]
-impl From<jni::errors::Error> for TcamError {
+impl From<jni::errors::Error> for HoshiyomiError {
     fn from(_: jni::errors::Error) -> Self {
-        TcamError::InvalidData
+        HoshiyomiError::InvalidData
     }
 }
 
@@ -98,9 +98,9 @@ pub struct FrameSpec {
 }
 
 impl FrameSpec {
-    pub fn new(width: u32, height: u32, format: PixelFormat) -> TcamResult<Self> {
+    pub fn new(width: u32, height: u32, format: PixelFormat) -> HoshiyomiResult<Self> {
         if width == 0 || height == 0 {
-            return Err(TcamError::BadDimensions);
+            return Err(HoshiyomiError::BadDimensions);
         }
         Ok(Self { width, height, format })
     }
