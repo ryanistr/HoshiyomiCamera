@@ -30,6 +30,17 @@ class CameraActivity : ComponentActivity() {
         const val EXTRA_MODE = "mode"
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // A mode deep-link can arrive while the activity is already on top
+        // (launcher shortcut / third-party intent with LAUNCH_SINGLE_TASK).
+        // Route it exactly like the cold-start path in onCreate.
+        if (intent.action == ACTION_START_SPECIFY_MODE) {
+            intent.getStringExtra(EXTRA_MODE)?.let { viewModel.queueModeOnStart(it) }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.onResume()

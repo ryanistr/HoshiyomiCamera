@@ -583,7 +583,17 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(ready = false) }
     }
 
+    /**
+     * True only when we moved to the front sensor *automatically* because a
+     * front-only mode (WideSelfie / STBlur) was selected. Leaving that mode
+     * for a normal mode restores the back sensor as the default. A user's
+     * manual flip clears it, so an intentional front-camera choice is kept.
+     */
+    private var autoFlippedToFront = false
+
     fun flipCamera() {
+        // A manual flip is an explicit facing choice — never auto-restore.
+        autoFlippedToFront = false
         camera.release()
         _state.update {
             val facing = !it.facingFront
@@ -629,7 +639,16 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         // front sensor when selected from the back camera. flipCamera reopens
         // with the profile and ratio already applied above.
         val needsFront = id == "wideselfie" || id == "stblur"
-        if (needsFront && !state.value.facingFront) flipCamera()
+        if (needsFront && !state.value.facingFront) {
+            flipCamera()                    // clears the manual flag
+            autoFlippedToFront = true        // mark this front switch as automatic
+        } else if (!needsFront && autoFlippedToFront && state.value.facingFront) {
+            // Returning from a front-only mode to a normal mode: restore the
+            // back camera as the default instead of staying on front.
+            Log.d(TAG, "selectMode($id): restoring back camera after front-only mode")
+            autoFlippedToFront = false
+            flipCamera()
+        }
         // TCAM switches the viewfinder aspect with the mode (4:3 photo family,
         // 16:9 video family); the buffer is sized at session-configuration
         // time, so a ratio change rebuilds the session against the same surface.
